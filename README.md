@@ -1,8 +1,8 @@
-# 📈 FinMaths: Institutional-Grade Portfolio Optimizer
+# FinMaths: Portfolio Optimization
 
 A premium, glassmorphism-inspired financial dashboard built with Streamlit and powered by Groq AI. This tool performs advanced Modern Portfolio Theory (MPT) optimization using real-time market data, adjusted for multi-currency risk, taxes, and inflation.
 
-## 🚀 Key Features
+## Key Features
 
 ### 1. Advanced Financial Engineering
 - **Log Returns**: Modeled for accurate multi-period compounding and statistical robustness.
@@ -20,7 +20,7 @@ A premium, glassmorphism-inspired financial dashboard built with Streamlit and p
 - **Context-Aware Insights**: AI Advisor is grounded in your generated metrics, risk profile, and asset allocations.
 - **Automated Briefing**: Get an immediate expert summary of your diversification benefits upon opening the chat.
 
-## 🛠️ Installation
+## Installation
 
 1.  **Clone the Repository**:
     ```bash
@@ -46,7 +46,7 @@ A premium, glassmorphism-inspired financial dashboard built with Streamlit and p
     streamlit run app.py
     ```
 
-## 📊 Methodology
+## Methodology
 - **Optimization**: Uses Scipy's `SLSQP` optimizer to maximize the Sharpe Ratio.
 - **Simulation**: 10,000-point Monte Carlo for Efficient Frontier discovery.
 - **Constraints**: Sector caps (25%), asset caps (15%), and risk-profile specific class bounds.
