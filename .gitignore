@@ -1,0 +1,57 @@
+# ── Virtual Environment ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Project: Data Cache ───────────────────────────────────────────────────────
+data/*.pkl
+data/*.csv
+data/*.json
+# keep the directory itself
+!data/.gitkeep
+
+# ── Project: Generated Outputs ────────────────────────────────────────────────
+outputs/
+!outputs/.gitkeep
+
+# ── Secrets / Environment ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+secrets.toml
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+# *.ipynb
+
+# ── IDE / Editors ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
