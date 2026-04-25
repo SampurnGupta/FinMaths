@@ -8,15 +8,48 @@ import pandas as pd
 from scipy.optimize import minimize
 
 RISK_FREE_RATE_ANNUAL = 0.065  # RBI repo-rate approximation
+INFLATION_RATE = 0.060         # Indian CPI average approximation
 RF_MONTHLY = RISK_FREE_RATE_ANNUAL / 12
 
 
-def _portfolio_stats(weights: np.ndarray, mean_returns: np.ndarray, cov_matrix: np.ndarray):
-    """Return (annual_return, annual_volatility, sharpe)."""
-    ret = np.dot(weights, mean_returns) * 12
+def _portfolio_stats(weights: np.ndarray, mean_returns: np.ndarray, cov_matrix: np.ndarray, meta: pd.DataFrame = None, prev_weights: np.ndarray = None):
+    """
+    Return (annual_return, annual_volatility, sharpe).
+    Incorporates tax adjustment and turnover penalty if meta/prev_weights provided.
+    """
+    raw_ret = np.dot(weights, mean_returns) * 12
+    
+    # Tax Adjustment (Approximate blended rate)
+    tax_adj_ret = raw_ret
+    if meta is not None:
+        # Equity LTCG ~12.5%, Debt ~30%
+        equity_mask = (meta["asset_class"] == "equity").values
+        eq_w = weights[equity_mask].sum()
+        debt_w = 1 - eq_w
+        blended_tax = (eq_w * 0.125) + (debt_w * 0.30)
+        tax_adj_ret = raw_ret * (1 - blended_tax)
+    
+    # Turnover Penalty (Rebalancing cost ~0.5%)
+    penalty = 0
+    if prev_weights is not None:
+        turnover = np.sum(np.abs(weights - prev_weights)) / 2
+        penalty = turnover * 0.005 # 0.5% rebalancing cost
+    
+    final_ret = (tax_adj_ret - penalty) - INFLATION_RATE
     vol = np.sqrt(weights @ cov_matrix @ weights) * np.sqrt(12)
-    sharpe = (ret - RISK_FREE_RATE_ANNUAL) / vol if vol > 0 else 0
-    return ret, vol, sharpe
+    sharpe = (final_ret - RISK_FREE_RATE_ANNUAL) / vol if vol > 0 else 0
+    return final_ret, vol, sharpe
+
+def get_return_explanation():
+    return """
+    **How we calculate Expected Returns:**
+    1. **Pre-Tax Return**: Calculated as the weighted average of individual asset historical returns (or synthesized returns for FDs/Bonds).
+    2. **Tax Adjustment**: We apply a blended tax rate based on your portfolio composition:
+       - **Equity (12.5%)**: Long-term Capital Gains (LTCG) approximation.
+       - **Debt/FD (30%)**: Flat tax rate for interest/gains.
+    3. **Rebalancing Cost**: A 0.5% penalty is applied to turnover to account for brokerage and slippage.
+    4. **Inflation**: An assumed inflation rate of 6.0% p.a. is subtracted to show 'Real Returns' (purchasing power).
+    """
 
 
 def build_constraints(risk_profile: dict, meta: pd.DataFrame):
@@ -130,14 +163,23 @@ def monte_carlo_portfolios(
         if alt_idx and not (a_lb - 0.05 <= al_w <= a_ub + 0.05):
             continue
 
-        ret, vol, sharpe = _portfolio_stats(w, mu, sigma)
+        ret, vol, sharpe = _portfolio_stats(w, mu, sigma, meta)
         row = dict(zip(tickers, w))
         row["return"] = ret
         row["volatility"] = vol
         row["sharpe"] = sharpe
         results.append(row)
 
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+    if df.empty: return df
+    
+    # Identify Top 3 distinct strategies
+    df["strategy"] = "Random"
+    df.loc[df["volatility"].idxmin(), "strategy"] = "Balanced (Min Risk)"
+    df.loc[df["sharpe"].idxmax(), "strategy"] = "Optimal (Max Sharpe)"
+    df.loc[df["return"].idxmax(), "strategy"] = "Growth (Higher Return)"
+    
+    return df
 
 
 def efficient_frontier(
@@ -180,7 +222,7 @@ def efficient_frontier(
         )
         if result.success:
             w = result.x
-            ret, vol, sharpe = _portfolio_stats(w, mu, sigma)
+            ret, vol, sharpe = _portfolio_stats(w, mu, sigma, meta)
             row = dict(zip(tickers, w))
             row["return"] = ret
             row["volatility"] = vol
@@ -231,7 +273,7 @@ def optimize_max_sharpe(
         res = minimize(neg_sharpe, w0, method="SLSQP", bounds=bounds, constraints=constraints,
                        options={"maxiter": 1000, "ftol": 1e-10})
         if res.success:
-            ret, vol, sharpe = _portfolio_stats(res.x, mu, sigma)
+            ret, vol, sharpe = _portfolio_stats(res.x, mu, sigma, meta)
             if sharpe > best_sharpe:
                 best_sharpe = sharpe
                 best = res.x
@@ -239,7 +281,7 @@ def optimize_max_sharpe(
     if best is None:
         return None
 
-    ret, vol, sharpe = _portfolio_stats(best, mu, sigma)
+    ret, vol, sharpe = _portfolio_stats(best, mu, sigma, meta)
     row = dict(zip(tickers, best))
     row["return"] = ret
     row["volatility"] = vol
@@ -276,9 +318,10 @@ def diversification_score(weights: np.ndarray, cov_matrix: np.ndarray) -> float:
     """
     Effective number of assets (inverse HHI).
     Ranges from 1 (fully concentrated) to n (perfectly diversified).
-    Normalized to 0–10 scale.
+    Saturation Metric: We consider a portfolio with 10+ effective assets to be 'perfectly' diversified (10/10).
     """
-    n = len(weights)
     hhi = np.sum(weights**2)
     effective_n = 1 / hhi if hhi > 0 else 1
-    return round((effective_n / n) * 10, 2)
+    # Saturation at 10 assets
+    score = (effective_n / 10.0) * 10.0
+    return round(min(10.0, score), 2)

@@ -290,6 +290,14 @@ def plot_sip_projection(paths_df: pd.DataFrame, sip_data: dict, initial: float) 
         hovertemplate="Year %{x}<br>Median: ₹%{y:,.0f}<extra></extra>",
     ))
 
+    # Worst Case line
+    fig.add_trace(go.Scatter(
+        x=paths_df["year"], y=paths_df["p5"],
+        mode="lines", line=dict(color=COLORS["danger"], width=1.5, dash="dash"),
+        name="Worst Case (p5)",
+        hovertemplate="Year %{x}<br>Worst Case: ₹%{y:,.0f}<extra></extra>",
+    ))
+
     # Deterministic SIP line (constant return)
     if sip_data and "year_by_year" in sip_data:
         yby = sip_data["year_by_year"]

@@ -4,9 +4,14 @@ Main Streamlit entrypoint. Manages session state and screen routing.
 """
 
 import io
+import time
 import numpy as np
 import pandas as pd
 import streamlit as st
+import os
+from dotenv import load_dotenv
+
+load_dotenv() # Load environment variables from .env
 
 from modules.risk_profiler import (calculate_risk_profile, adjust_for_preferences,
                                     get_risk_score, estimate_post_tax_return, TAX_SLABS)
@@ -20,6 +25,9 @@ from modules.projections import (sip_future_value, monte_carlo_future_paths,
 from modules.visualizations import (plot_efficient_frontier, plot_correlation_heatmap,
                                      plot_allocation_pie, plot_sector_bar, plot_asset_class_donut,
                                      plot_sip_projection, plot_risk_contribution, plot_comparison_bars)
+from modules.llm_engine import (get_llm_explanation, explain_chart, explain_tax_logic, 
+                                 explain_monte_carlo, get_portfolio_summary, get_final_recommendation,
+                                 get_chat_response)
 
 st.set_page_config(page_title="Portfolio Optimizer", page_icon="📈", layout="wide")
 
@@ -192,13 +200,15 @@ footer {visibility: hidden;}
 st.markdown(CSS, unsafe_allow_html=True)
 
 SCREENS = ["Profile", "Preferences", "Optimization", "Allocation",
-           "Frontier", "Diversification", "Comparison", "Projections", "Insights & Export"]
+           "Frontier", "Diversification", "Comparison", "Projections", "Insights & Export", "AI Concierge"]
 
 def init_state():
     defaults = dict(screen=0, profile=None, preferences=None, returns=None,
                     meta=None, mc_portfolios=None, frontier=None, optimal=None,
                     gmvp=None, ew_portfolio=None, asset_stats=None,
-                    mean_returns=None, cov_matrix=None)
+                    mean_returns=None, cov_matrix=None, 
+                    groq_key=os.getenv("GROQ_API_KEY", ""),
+                    chat_history=[])
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -219,12 +229,14 @@ def sidebar():
             p = st.session_state.profile
             st.markdown(f"**Risk Profile:** {p['badge']} {p['name']}")
             st.markdown(f"**Risk Score:** {get_risk_score(p['name'])}/100")
+        
+        st.markdown("---")
         if st.button("🔄 Start Over", width="stretch"):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
 
-def card(title, value, subtitle="", color="#6366F1"):
+def card(title, value, subtitle="Post-Tax & Inflation Adjusted", color="#6366F1"):
     st.markdown(f'''
     <div class="metric-card" style="border-left-color:{color}">
         <h3>{title}</h3>
@@ -272,6 +284,31 @@ def screen_profile():
         st.session_state.screen = 1
         st.rerun()
 
+    with st.expander("🔍 View Supported Asset Universe"):
+        universe = get_asset_universe({"interested_international": True, "interested_commodities": True, "willing_bonds": True, "open_reits": True})
+        
+        st.markdown("### 📊 Dataset Details")
+        st.markdown("""
+        - **Data Source**: [yfinance](https://finance.yahoo.com/) for live assets; Synthetic models for fixed income.
+        - **Time Period**: 5 Years of monthly historical data.
+        - **Frequency**: Monthly Log-Returns (to model compounding correctly).
+        - **FX Model**: International assets (USD) are automatically converted to **INR** using historical exchange rates to model FX risk.
+        """)
+        
+        st.markdown("### 🛠️ Synthetic Asset Assumptions")
+        st.markdown("""
+        - **Fixed Deposits**: Modeled as low-volatility assets (~0.5% annual std dev) with zero equity correlation.
+        - **Bonds**: Modeled with interest rate sensitivity (duration risk) and negative correlation to equities.
+        - **REITs**: Modeled with hybrid characteristics (equity-like volatility but sectoral real-estate constraints).
+        """)
+
+        rows = []
+        for t, info in universe["live"].items():
+            rows.append({"Asset": info["label"], "Category": info["category"].upper(), "Sector": info["sector"], "Currency": info.get("currency", "INR")})
+        for k, info in universe["hardcoded"].items():
+            rows.append({"Asset": info["label"], "Category": info["category"].upper(), "Sector": info["sector"], "Currency": "INR (Assumed)"})
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
 # ── Screen 2: Preferences ─────────────────────────────────────────────────────
 def screen_preferences():
     st.markdown('<div class="section-title">🎯 Asset Constraints</div>', unsafe_allow_html=True)
@@ -303,48 +340,74 @@ def screen_preferences():
 def screen_optimization():
     st.markdown('<div class="section-title">⚡ Computing Optimal Strategy</div>', unsafe_allow_html=True)
     st.markdown('<p style="color: #94A3B8; margin-bottom: 24px;">Our engine is simulating thousands of market scenarios to find your ideal risk-reward balance.</p>', unsafe_allow_html=True)
-    if st.session_state.mc_portfolios is not None:
-        st.session_state.screen = 3; st.rerun(); return
+    
+    if st.session_state.mc_portfolios is None:
+        bar = st.progress(0, text="Starting…")
+        def cb(msg, pct): bar.progress(pct, text=msg)
 
-    bar = st.progress(0, text="Starting…")
-    def cb(msg, pct): bar.progress(pct, text=msg)
+        universe = get_asset_universe(st.session_state.preferences)
+        returns, meta = build_combined_returns(universe, progress_cb=cb)
 
-    universe = get_asset_universe(st.session_state.preferences)
-    returns, meta = build_combined_returns(universe, progress_cb=cb)
+        if returns.empty or len(returns.columns) < 2:
+            st.error("Not enough data fetched. Check your internet connection and try again.")
+            return
 
-    if returns.empty or len(returns.columns) < 2:
-        st.error("Not enough data fetched. Check your internet connection and try again.")
-        return
+        cb("Computing statistics…", 0.6)
+        mean_ret = returns.mean()
+        cov      = returns.cov()
+        profile  = st.session_state.profile
 
-    cb("Computing statistics…", 0.6)
-    mean_ret = returns.mean()
-    cov      = returns.cov()
-    profile  = st.session_state.profile
+        cb("Running Monte Carlo (10,000 portfolios)…", 0.7)
+        mc = monte_carlo_portfolios(mean_ret, cov, profile, meta, n=10_000)
 
-    cb("Running Monte Carlo (10,000 portfolios)…", 0.7)
-    mc = monte_carlo_portfolios(mean_ret, cov, profile, meta, n=10_000)
+        cb("Solving efficient frontier…", 0.85)
+        ef = efficient_frontier(mean_ret, cov, profile, meta, n_points=20)
 
-    cb("Solving efficient frontier…", 0.85)
-    ef = efficient_frontier(mean_ret, cov, profile, meta, n_points=20)
+        from modules.portfolio_optimizer import equal_weight_portfolio, compute_asset_individual_stats, find_gmvp
+        gmvp = find_gmvp(mc) if not mc.empty else None
+        ew   = equal_weight_portfolio(mean_ret, cov)
+        asset_stats = compute_asset_individual_stats(mean_ret, cov)
 
-    cb("Finding optimal portfolio…", 0.92)
-    optimal = optimize_max_sharpe(mean_ret, cov, profile, meta)
-    if optimal is None and not mc.empty:
-        from modules.portfolio_optimizer import find_max_sharpe
-        optimal = find_max_sharpe(mc)
+        st.session_state.update(dict(returns=returns, meta=meta, mean_returns=mean_ret,
+                                      cov_matrix=cov, mc_portfolios=mc, frontier=ef,
+                                      gmvp=gmvp, ew_portfolio=ew, asset_stats=asset_stats))
+        bar.progress(1.0, text="Done!")
+        st.rerun()
 
-    from modules.portfolio_optimizer import find_gmvp
-    gmvp = find_gmvp(mc) if not mc.empty else None
-    ew   = equal_weight_portfolio(mean_ret, cov)
-    asset_stats = compute_asset_individual_stats(mean_ret, cov)
+    mc = st.session_state.mc_portfolios
+    st.success("Simulations complete! We've identified 3 distinct strategies for you.")
+    
+    # Selection UI
+    top_3 = mc[mc["strategy"] != "Random"].copy()
+    
+    # Sort for consistent display: Balanced -> Optimal -> Growth
+    order = {"Balanced (Min Risk)": 0, "Optimal (Max Sharpe)": 1, "Growth (Higher Return)": 2}
+    top_3["order"] = top_3["strategy"].map(order)
+    top_3 = top_3.sort_values("order")
 
-    st.session_state.update(dict(returns=returns, meta=meta, mean_returns=mean_ret,
-                                  cov_matrix=cov, mc_portfolios=mc, frontier=ef,
-                                  optimal=optimal, gmvp=gmvp, ew_portfolio=ew,
-                                  asset_stats=asset_stats))
-    bar.progress(1.0, text="Done!")
-    st.session_state.screen = 3
-    st.rerun()
+    cols = st.columns(3)
+    for i, (idx, row) in enumerate(top_3.iterrows()):
+        with cols[i]:
+            st.markdown(f"### {row['strategy']}")
+            st.metric("Expected Return", f"{row['return']:.1%}")
+            st.metric("Volatility", f"{row['volatility']:.1%}")
+            st.metric("Sharpe Ratio", f"{row['sharpe']:.2f}")
+            if st.button(f"Choose {row['strategy'].split(' ')[0]}", key=f"btn_{i}"):
+                # If Balanced (Min Risk), use GMVP explicitly
+                if "Balanced" in row["strategy"]:
+                    st.session_state.optimal = st.session_state.gmvp
+                else:
+                    st.session_state.optimal = row
+                st.session_state.screen = 3
+                st.rerun()
+
+    # LLM insight about Monte Carlo
+    if st.session_state.groq_key:
+        st.markdown("---")
+        if st.button("🤖 Explain why we use Monte Carlo?"):
+            with st.spinner("..."):
+                explanation = explain_monte_carlo(10000, mc["sharpe"].max(), st.session_state.groq_key)
+                st.info(explanation)
 
 # ── Screen 4: Allocation ──────────────────────────────────────────────────────
 def screen_allocation():
@@ -359,10 +422,15 @@ def screen_allocation():
     div_score = diversification_score(weights.values, st.session_state.cov_matrix.loc[tickers, tickers].values)
 
     c1, c2, c3, c4 = st.columns(4)
-    with c1: card("Expected Annual Return", f"{opt['return']:.2%}", "Pre-tax", "#4F46E5")
+    with c1: card("Expected Annual Return", f"{opt['return']:.2%}", "Post-Tax & Inflation", "#6366F1")
     with c2: card("Annual Volatility", f"{opt['volatility']:.2%}", "1σ risk", "#EF4444")
     with c3: card("Sharpe Ratio", f"{opt['sharpe']:.2f}", f"RF = {RISK_FREE_RATE_ANNUAL:.1%}", "#10B981")
     with c4: card("Diversification", f"{div_score}/10", "Inv. HHI score", "#F59E0B")
+    
+    # Return Estimation Explanation
+    from modules.portfolio_optimizer import get_return_explanation
+    with st.expander("📝 How we estimate these returns? (Tax & Costs)"):
+        st.markdown(get_return_explanation())
 
     # Post-tax estimate
     avg_cat = meta.loc[tickers].groupby("asset_class")["asset_class"].count()
@@ -372,7 +440,7 @@ def screen_allocation():
 
     col1, col2 = st.columns([1.1, 1])
     with col1:
-        st.plotly_chart(plot_allocation_pie(weights, meta), width="stretch")
+        st.plotly_chart(plot_allocation_pie(weights, meta), use_container_width=True)
     with col2:
         # Table
         rows = []
@@ -384,7 +452,7 @@ def screen_allocation():
             post_tax = estimate_post_tax_return(ret, cat)
             rows.append({"Asset": meta.loc[t, "label"], "Allocation": f"{weights[t]:.1%}",
                          "Amount (₹)": f"₹{amt:,.0f}", "Exp. Return": f"{ret:.2%}",
-                         "Post-Tax": f"{post_tax:.2%}"})
+                         "Post-Tax & Inf.": f"{post_tax:.2%}"})
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if st.button("Next: Efficient Frontier →"):
@@ -397,7 +465,13 @@ def screen_frontier():
         st.session_state.mc_portfolios, st.session_state.frontier,
         st.session_state.optimal, st.session_state.gmvp,
         st.session_state.asset_stats, st.session_state.meta)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    if st.session_state.groq_key:
+        if st.button("🤖 Explain the Efficient Frontier"):
+            with st.spinner("..."):
+                summary = f"Optimal Sharpe: {st.session_state.optimal['sharpe']:.2f}, Asset Count: {len(st.session_state.asset_stats)}"
+                st.info(explain_chart("Efficient Frontier", summary, st.session_state.groq_key))
     st.caption("⭐ Green star = Max Sharpe (recommended) · 🔶 Diamond = Min Variance · Colored dots = 10,000 random portfolios")
     if st.button("Next: Diversification →"):
         st.session_state.screen = 5; st.rerun()
@@ -413,9 +487,14 @@ def screen_diversification():
     c1, c2 = st.columns(2)
     with c1:
         corr_matrix = st.session_state.returns[tickers].corr()
-        st.plotly_chart(plot_correlation_heatmap(corr_matrix, meta), width="stretch")
+        st.plotly_chart(plot_correlation_heatmap(corr_matrix, meta), use_container_width=True)
+        if st.session_state.groq_key:
+            if st.button("🤖 Explain Correlations"):
+                with st.spinner("..."):
+                    summary = f"Correlation matrix for {len(tickers)} assets."
+                    st.info(explain_chart("Correlation Matrix", summary, st.session_state.groq_key))
     with c2:
-        st.plotly_chart(plot_sector_bar(weights, meta), width="stretch")
+        st.plotly_chart(plot_sector_bar(weights, meta), use_container_width=True)
 
     c3, c4 = st.columns(2)
     with c3:
@@ -426,6 +505,79 @@ def screen_diversification():
     if st.button("Next: Comparison →"):
         st.session_state.screen = 6; st.rerun()
 
+def stream_text(text: str, delay: float = 0.01):
+    for word in text.split(" "):
+        yield word + " "
+        time.sleep(delay)
+
+
+# ── Screen 10: Interactive AI Chat ────────────────────────────────────────────
+def screen_chat():
+    st.markdown('<div class="section-title">💬 AI Portfolio Concierge</div>', unsafe_allow_html=True)
+    
+    opt     = st.session_state.optimal
+    profile = st.session_state.profile
+    user    = st.session_state.user
+    meta    = st.session_state.meta
+    
+    # Display mini metrics for context
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.metric("Return (Real)", f"{opt['return']:.2%}")
+    with c2: st.metric("Risk", f"{opt['volatility']:.2%}")
+    with c3: st.metric("Sharpe", f"{opt['sharpe']:.2f}")
+    with c4: st.metric("Horizon", f"{user['horizon']}Y")
+
+    st.markdown("---")
+    
+    # Prepare Context String
+    tickers = [c for c in meta.index if c in opt.index and opt[c] > 0.001]
+    weights_str = ", ".join([f"{meta.loc[t, 'label']}: {opt[t]:.1%}" for t in tickers])
+    context = f"""
+    Risk Profile: {profile['name']}
+    Investment Horizon: {user['horizon']} years
+    Target Corpus: ₹{user.get('target', 0):,.0f}
+    Initial Amount: ₹{user['initial']:,.0f} | Monthly SIP: ₹{user['monthly_sip']:,.0f}
+    
+    Optimized Portfolio Stats:
+    - Expected Return: {opt['return']:.2%}
+    - Volatility: {opt['volatility']:.2%}
+    - Sharpe Ratio: {opt['sharpe']:.2f}
+    
+    Asset Allocations:
+    {weights_str}
+    """
+
+    # Auto-seed initial message if empty
+    if not st.session_state.chat_history and st.session_state.groq_key:
+        with st.spinner("..."):
+            initial_prompt = "Briefly explain the core benefits of this specific diversified portfolio for my profile."
+            st.session_state.chat_history.append({"role": "user", "content": initial_prompt})
+            response = get_chat_response(st.session_state.chat_history, context, st.session_state.groq_key)
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+        st.rerun()
+
+    # Chat Interface
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Ask me anything about your portfolio..."):
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            if not st.session_state.groq_key:
+                response = "⚠️ Please set your Groq API Key in the .env file to use the AI Advisor."
+            else:
+                with st.spinner("..."):
+                    response = get_chat_response(st.session_state.chat_history, context, st.session_state.groq_key)
+                st.write_stream(stream_text(response))
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+    if st.button("⬅️ Back to Insights"):
+        st.session_state.screen = 8; st.rerun()
+
 # ── Screen 7: Comparison ──────────────────────────────────────────────────────
 def screen_comparison():
     st.markdown('<div class="section-title">⚖️ Performance Benchmarking</div>', unsafe_allow_html=True)
@@ -434,17 +586,21 @@ def screen_comparison():
     gmvp = st.session_state.gmvp
 
     cmp = pd.DataFrame({
-        "Recommended": {"Expected Return": opt["return"], "Volatility": opt["volatility"], "Sharpe Ratio": opt["sharpe"]},
-        "Equal Weight": {"Expected Return": ew["return"],  "Volatility": ew["volatility"],  "Sharpe Ratio": ew["sharpe"]},
-        "Min Variance":  {"Expected Return": gmvp["return"], "Volatility": gmvp["volatility"], "Sharpe Ratio": gmvp["sharpe"]},
+        "Recommended": {"Exp. Return (Real)": opt["return"], "Volatility": opt["volatility"], "Sharpe Ratio": opt["sharpe"]},
+        "Equal Weight": {"Exp. Return (Real)": ew["return"],  "Volatility": ew["volatility"],  "Sharpe Ratio": ew["sharpe"]},
+        "Min Variance":  {"Exp. Return (Real)": gmvp["return"], "Volatility": gmvp["volatility"], "Sharpe Ratio": gmvp["sharpe"]},
     })
 
     st.plotly_chart(plot_comparison_bars(cmp), width="stretch")
 
     # Rebalancing suggestions
     meta = st.session_state.meta
-    opt_tickers = [c for c in meta.index if c in opt.index and opt[c] > 0.001]
-    st.markdown("#### Rebalancing Suggestions")
+    opt_tickers = [t for t in meta.index if t in opt.index and opt[t] > 0.001]
+    
+    st.markdown("**Tax & Inflation Methodology:**")
+    st.info("All returns shown are 'Real Returns' — net of simulated LTCG taxes, rebalancing costs, and an assumed inflation rate of 6.0% p.a.")
+    
+    st.markdown("**Detailed Tax Estimate (LTCG, >1 year holding):**")
     user = st.session_state.user
     for t in opt_tickers:
         alloc = opt[t]; amt = user["initial"] * alloc
@@ -475,14 +631,15 @@ def screen_projections():
     ann_vol = opt["volatility"]
 
     sip_data  = sip_future_value(initial, sip, ann_ret, horizon)
-    paths_df  = monte_carlo_future_paths(initial, sip, ann_ret, ann_vol, horizon, n_paths=1000)
+    paths_df, worst_case = monte_carlo_future_paths(initial, sip, ann_ret, ann_vol, horizon, n_paths=1000)
 
-    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), width="stretch")
-
-    c1, c2, c3 = st.columns(3)
-    with c1: card("Median Final Value", fmt_inr(paths_df.iloc[-1]["p50"]), f"In {horizon} years", "#4F46E5")
-    with c2: card("Total Invested", fmt_inr(sip_data["total_invested"]), "Lump sum + SIP", "#6B7280")
-    with c3: card("Expected Gains", fmt_inr(sip_data["total_gains"]), "Pre-tax", "#10B981")
+    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), use_container_width=True)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: card("Median Final Value", fmt_inr(paths_df.iloc[-1]["p50"]), f"In {horizon} years", "#6366F1")
+    with c2: card("Total Invested", fmt_inr(sip_data["total_invested"]), "Lump sum + SIP", "#94A3B8")
+    with c3: card("Expected Gains", fmt_inr(sip_data["total_gains"]), "Tax-adjusted", "#10B981")
+    with c4: card("Worst Case Drawdown", f"{worst_case:.1%}", "95% confidence", "#EF4444")
 
     if user.get("target", 0) > 0:
         target = user["target"]
@@ -538,11 +695,21 @@ def screen_insights():
     for w in warnings:
         st.markdown(f'<div class="warning-card">{w}</div>', unsafe_allow_html=True)
 
-    st.markdown("#### Checklist")
-    st.checkbox("Open / fund brokerage account")
-    st.checkbox("Place buy orders per recommended allocation")
-    st.checkbox("Set up monthly SIP / auto-invest")
-    st.checkbox("Set quarterly rebalancing reminder")
+    if st.session_state.groq_key:
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🤖 Generate Portfolio Summary"):
+                with st.spinner("..."):
+                    summary = get_portfolio_summary(weights.to_dict(), opt, st.session_state.groq_key)
+                    st.info(summary)
+        with c2:
+            if st.button("🤖 Get Final Recommendation"):
+                with st.spinner("..."):
+                    rec = get_final_recommendation(profile['name'], user['horizon'], st.session_state.groq_key)
+                    st.info(rec)
+
+    st.markdown("---")
 
     # ── Exports ───────────────────────────────────────────────────────────────
     st.markdown("#### Download Reports")
@@ -588,6 +755,10 @@ def screen_insights():
         except Exception as e:
             st.caption(f"PDF unavailable: {e}")
 
+    st.markdown("---")
+    if st.button("Final Step: Chat with AI Advisor →"):
+        st.session_state.screen = 9; st.rerun()
+
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
@@ -604,6 +775,7 @@ def main():
     elif s == 6: screen_comparison()
     elif s == 7: screen_projections()
     elif s == 8: screen_insights()
+    elif s == 9: screen_chat()
 
 if __name__ == "__main__":
     main()

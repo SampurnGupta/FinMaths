@@ -104,36 +104,53 @@ HARDCODED_ASSETS = {
         "annual_vol": 0.160,
         "equity_corr": 0.48,
     },
+    "INFLATION_LINKED_BOND": {
+        "label": "Inflation Linked Bond",
+        "category": "bond",
+        "sector": "Fixed Income",
+        "annual_return": 0.065, # Approx real return + inflation
+        "annual_vol": 0.040,
+        "equity_corr": -0.05,
+    }
 }
 
 # ── Live Asset Universe (fetched from yfinance) ───────────────────────────────
 LIVE_ASSETS = {
     # Broad Market
-    "^NSEI": {"label": "Nifty 50", "category": "equity", "sector": "Broad Market"},
-    "^NSEBANK": {"label": "Nifty Bank", "category": "equity", "sector": "Finance"},
+    "^NSEI": {"label": "Nifty 50", "category": "equity", "sector": "Broad Market", "currency": "INR"},
+    "^NSEBANK": {"label": "Nifty Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
     # Tech / IT
-    "INFY.NS": {"label": "Infosys", "category": "equity", "sector": "Technology"},
-    "TCS.NS": {"label": "TCS", "category": "equity", "sector": "Technology"},
-    "WIPRO.NS": {"label": "Wipro", "category": "equity", "sector": "Technology"},
+    "INFY.NS": {"label": "Infosys", "category": "equity", "sector": "Technology", "currency": "INR"},
+    "TCS.NS": {"label": "TCS", "category": "equity", "sector": "Technology", "currency": "INR"},
+    "WIPRO.NS": {"label": "Wipro", "category": "equity", "sector": "Technology", "currency": "INR"},
     # Healthcare
-    "SUNPHARMA.NS": {"label": "Sun Pharma", "category": "equity", "sector": "Healthcare"},
-    "DRREDDY.NS": {"label": "Dr. Reddy's", "category": "equity", "sector": "Healthcare"},
+    "SUNPHARMA.NS": {"label": "Sun Pharma", "category": "equity", "sector": "Healthcare", "currency": "INR"},
+    "DRREDDY.NS": {"label": "Dr. Reddy's", "category": "equity", "sector": "Healthcare", "currency": "INR"},
     # Finance
-    "HDFCBANK.NS": {"label": "HDFC Bank", "category": "equity", "sector": "Finance"},
-    "ICICIBANK.NS": {"label": "ICICI Bank", "category": "equity", "sector": "Finance"},
-    "SBIN.NS": {"label": "SBI", "category": "equity", "sector": "Finance"},
+    "HDFCBANK.NS": {"label": "HDFC Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
+    "ICICIBANK.NS": {"label": "ICICI Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
+    "SBIN.NS": {"label": "SBI", "category": "equity", "sector": "Finance", "currency": "INR"},
     # Energy
-    "RELIANCE.NS": {"label": "Reliance Industries", "category": "equity", "sector": "Energy"},
-    "ONGC.NS": {"label": "ONGC", "category": "equity", "sector": "Energy"},
+    "RELIANCE.NS": {"label": "Reliance Industries", "category": "equity", "sector": "Energy", "currency": "INR"},
+    "ONGC.NS": {"label": "ONGC", "category": "equity", "sector": "Energy", "currency": "INR"},
     # Consumer / FMCG
-    "HINDUNILVR.NS": {"label": "Hindustan Unilever", "category": "equity", "sector": "Consumer"},
-    "MARUTI.NS": {"label": "Maruti Suzuki", "category": "equity", "sector": "Consumer"},
-    # US Equities
-    "SPY": {"label": "S&P 500 ETF", "category": "equity", "sector": "US Market"},
-    "QQQ": {"label": "NASDAQ ETF", "category": "equity", "sector": "US Market"},
-    # Gold
-    "GOLDBEES.NS": {"label": "Gold BeES ETF", "category": "commodity", "sector": "Commodities"},
-    "GLD": {"label": "SPDR Gold ETF", "category": "commodity", "sector": "Commodities"},
+    "HINDUNILVR.NS": {"label": "Hindustan Unilever", "category": "equity", "sector": "Consumer", "currency": "INR"},
+    "MARUTI.NS": {"label": "Maruti Suzuki", "category": "equity", "sector": "Consumer", "currency": "INR"},
+    # International / US
+    "SPY": {"label": "S&P 500 ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
+    "QQQ": {"label": "NASDAQ ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
+    "EEM": {"label": "Emerging Markets ETF", "category": "equity", "sector": "International", "currency": "USD"},
+    "IVE": {"label": "Value ETF (S&P 500)", "category": "equity", "sector": "US Market", "currency": "USD"},
+    "IVW": {"label": "Growth ETF (S&P 500)", "category": "equity", "sector": "US Market", "currency": "USD"},
+    "USMV": {"label": "Low Volatility ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
+    # Commodities
+    "GOLDBEES.NS": {"label": "Gold BeES ETF", "category": "commodity", "sector": "Commodities", "currency": "INR"},
+    "SILVERBEES.NS": {"label": "Silver BeES ETF", "category": "commodity", "sector": "Commodities", "currency": "INR"},
+    "GLD": {"label": "SPDR Gold ETF", "category": "commodity", "sector": "Commodities", "currency": "USD"},
+    # Crypto
+    "BTC-USD": {"label": "Bitcoin", "category": "commodity", "sector": "Crypto", "currency": "USD"},
+    "ETH-USD": {"label": "Ethereum", "category": "commodity", "sector": "Crypto", "currency": "USD"},
+    "SOL-USD": {"label": "Solana", "category": "commodity", "sector": "Crypto", "currency": "USD"},
 }
 
 # Sector → equity/debt/alt classification for constraint mapping
@@ -192,14 +209,16 @@ def get_asset_universe(preferences: dict) -> dict:
     selected_hardcoded = set()
 
     if preferences.get("interested_international", False):
-        selected_live.update(["SPY", "QQQ"])
+        selected_live.update(["SPY", "QQQ", "EEM", "IVE", "IVW", "USMV"])
         selected_hardcoded.update(["US_TREASURY_10Y", "US_CORP_IG"])
 
     if preferences.get("interested_commodities", False):
-        selected_live.add("GOLDBEES.NS")
+        selected_live.update(["GOLDBEES.NS", "SILVERBEES.NS"])
+        # Optional: Add crypto if interested in commodities/alternatives
+        selected_live.update(["BTC-USD", "ETH-USD", "SOL-USD"])
 
     if preferences.get("willing_bonds", True):
-        selected_hardcoded.update(["INDIA_GOVT_10Y", "INDIA_CORP_AAA"])
+        selected_hardcoded.update(["INDIA_GOVT_10Y", "INDIA_CORP_AAA", "INFLATION_LINKED_BOND"])
         # FDs
         selected_hardcoded.update(["SBI_FD", "HDFC_FD", "POST_OFFICE_TD"])
 
@@ -218,6 +237,19 @@ def fetch_price_data(tickers: list, period: str = "5y") -> pd.DataFrame:
     if cached is not None:
         return cached
 
+    # Fetch USDINR if needed
+    has_usd = any(LIVE_ASSETS.get(t, {}).get("currency") == "USD" for t in tickers)
+    usdinr = pd.Series()
+    if has_usd:
+        try:
+            usdinr_data = yf.download("USDINR=X", period=period, auto_adjust=True, progress=False)["Close"]
+            if isinstance(usdinr_data, pd.DataFrame):
+                usdinr = usdinr_data.iloc[:, 0]
+            else:
+                usdinr = usdinr_data
+        except Exception:
+            pass
+
     frames = {}
     for ticker in tickers:
         try:
@@ -225,9 +257,14 @@ def fetch_price_data(tickers: list, period: str = "5y") -> pd.DataFrame:
             if data.empty:
                 continue
             close = data["Close"]
-            # yfinance 1.x returns multi-level columns even for single ticker
             if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]  # take first (only) column
+                close = close.iloc[:, 0]
+            
+            # Convert to INR if asset is in USD
+            if LIVE_ASSETS.get(ticker, {}).get("currency") == "USD" and not usdinr.empty:
+                common_idx = close.index.intersection(usdinr.index)
+                close = close.loc[common_idx] * usdinr.loc[common_idx]
+
             close.name = ticker
             frames[ticker] = close
         except Exception:
@@ -237,15 +274,16 @@ def fetch_price_data(tickers: list, period: str = "5y") -> pd.DataFrame:
         return pd.DataFrame()
 
     prices = pd.DataFrame(frames).dropna(how="all")
-    prices = prices.ffill().dropna()   # pandas 3.0: ffill() replaces fillna(method='ffill')
+    prices = prices.ffill().dropna()
     _save_cache(key, prices)
     return prices
 
 
 def compute_monthly_returns(prices: pd.DataFrame) -> pd.DataFrame:
-    """Resample daily prices to monthly and compute simple returns."""
+    """Resample daily prices to monthly and compute Log Returns."""
     monthly = prices.resample("ME").last()
-    returns = monthly.pct_change().dropna()
+    # Log returns: log(p_t / p_{t-1})
+    returns = np.log(monthly / monthly.shift(1)).dropna()
     return returns
 
 

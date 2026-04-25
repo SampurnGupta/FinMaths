@@ -59,7 +59,7 @@ def monte_carlo_future_paths(
 ) -> pd.DataFrame:
     """
     Simulate n_paths portfolio growth paths using monthly returns.
-    Returns DataFrame with columns: year, p5, p25, p50, p75, p95
+    Returns (summary_df, worst_case_drawdown_value)
     """
     rng = np.random.default_rng(seed)
     monthly_mean = annual_return / 12
@@ -91,7 +91,16 @@ def monte_carlo_future_paths(
             "p95": np.percentile(vals, 95),
         })
 
-    return pd.DataFrame(rows)
+    # Worst-case drawdown across all paths
+    all_drawdowns = []
+    for i in range(n_paths):
+        path = paths[i, :]
+        peak = np.maximum.accumulate(path + 1) # add 1 to avoid div by zero if balance is zero
+        drawdown = (peak - path) / peak
+        all_drawdowns.append(np.max(drawdown))
+    worst_case = np.percentile(all_drawdowns, 95) 
+
+    return pd.DataFrame(rows), worst_case
 
 
 def goal_sip_required(
