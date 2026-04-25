@@ -28,11 +28,14 @@ LAYOUT_BASE = dict(
     paper_bgcolor=COLORS["bg"],
     plot_bgcolor=COLORS["bg"],
     font=dict(family="Inter, sans-serif", color=COLORS["text"], size=12),
-    margin=dict(l=40, r=20, t=50, b=40),
-    xaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
-    yaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
     legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0),
     hoverlabel=dict(bgcolor="white", font_size=12, bordercolor="#E5E7EB"),
+)
+DEFAULT_MARGIN = dict(l=40, r=20, t=50, b=40)
+TIGHT_MARGIN   = dict(l=10, r=10, t=50, b=10)
+DEFAULT_AXES = dict(
+    xaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
+    yaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
 )
 
 
@@ -121,7 +124,8 @@ def plot_efficient_frontier(
         ))
 
     fig.update_layout(
-        **LAYOUT_BASE,
+        **LAYOUT_BASE, **DEFAULT_AXES,
+        margin=DEFAULT_MARGIN,
         title=dict(text="Efficient Frontier", font=dict(size=16, color=COLORS["text"])),
         xaxis_title="Annual Volatility (Risk)",
         yaxis_title="Annual Expected Return",
@@ -152,10 +156,11 @@ def plot_correlation_heatmap(corr_matrix: pd.DataFrame, meta: pd.DataFrame) -> g
 
     fig.update_layout(
         **LAYOUT_BASE,
+        margin=DEFAULT_MARGIN,
         title=dict(text="Asset Correlation Matrix", font=dict(size=16)),
         height=450,
-        xaxis=dict(tickfont=dict(size=9), tickangle=-30),
-        yaxis=dict(tickfont=dict(size=9), autorange="reversed"),
+        xaxis=dict(tickfont=dict(size=9), tickangle=-30, gridcolor=COLORS["grid"]),
+        yaxis=dict(tickfont=dict(size=9), autorange="reversed", gridcolor=COLORS["grid"]),
     )
     return fig
 
@@ -176,13 +181,9 @@ def plot_allocation_pie(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
         hovertemplate="<b>%{label}</b><br>Allocation: %{percent}<extra></extra>",
     ))
 
-    fig.update_layout(
-        **LAYOUT_BASE,
-        title=dict(text="Recommended Portfolio Allocation", font=dict(size=16)),
-        showlegend=False,
-        height=420,
-        margin=dict(l=10, r=10, t=50, b=10),
-    )
+    fig.update_layout(**LAYOUT_BASE, title=dict(text="Recommended Portfolio Allocation", font=dict(size=16)),
+                       showlegend=False, height=420)
+    fig.update_layout(margin=TIGHT_MARGIN)
     return fig
 
 
@@ -209,9 +210,10 @@ def plot_sector_bar(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         **LAYOUT_BASE,
+        margin=DEFAULT_MARGIN,
         title=dict(text="Sector Exposure", font=dict(size=16)),
-        xaxis_title="Allocation",
-        xaxis_tickformat=".0%",
+        xaxis=dict(title="Allocation", tickformat=".0%", gridcolor=COLORS["grid"]),
+        yaxis=dict(gridcolor=COLORS["grid"]),
         height=400,
     )
     return fig
@@ -235,12 +237,9 @@ def plot_asset_class_donut(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
         marker=dict(colors=colors, line=dict(color="white", width=3)),
         hovertemplate="<b>%{label}</b><br>%{percent}<extra></extra>",
     ))
-    fig.update_layout(
-        **LAYOUT_BASE,
-        title=dict(text="Asset Class Breakdown", font=dict(size=16)),
-        showlegend=False, height=380,
-        margin=dict(l=10, r=10, t=50, b=10),
-    )
+    fig.update_layout(**LAYOUT_BASE, title=dict(text="Asset Class Breakdown", font=dict(size=16)),
+                       showlegend=False, height=380)
+    fig.update_layout(margin=TIGHT_MARGIN)
     return fig
 
 
@@ -249,16 +248,19 @@ def plot_sip_projection(paths_df: pd.DataFrame, sip_data: dict, initial: float) 
     fig = go.Figure()
 
     # Percentile bands
+    years = paths_df["year"].tolist()
+    years_rev = years[::-1]
+
     fig.add_trace(go.Scatter(
-        x=pd.concat([paths_df["year"], paths_df["year"][::-1]]),
-        y=pd.concat([paths_df["p95"], paths_df["p5"][::-1]]),
+        x=years + years_rev,
+        y=paths_df["p95"].tolist() + paths_df["p5"].tolist()[::-1],
         fill="toself", fillcolor="rgba(79,70,229,0.08)",
         line=dict(color="rgba(0,0,0,0)"),
         name="5th–95th Percentile", showlegend=True,
     ))
     fig.add_trace(go.Scatter(
-        x=pd.concat([paths_df["year"], paths_df["year"][::-1]]),
-        y=pd.concat([paths_df["p75"], paths_df["p25"][::-1]]),
+        x=years + years_rev,
+        y=paths_df["p75"].tolist() + paths_df["p25"].tolist()[::-1],
         fill="toself", fillcolor="rgba(79,70,229,0.15)",
         line=dict(color="rgba(0,0,0,0)"),
         name="25th–75th Percentile", showlegend=True,
@@ -287,7 +289,8 @@ def plot_sip_projection(paths_df: pd.DataFrame, sip_data: dict, initial: float) 
                   annotation_text="Initial", annotation_position="right")
 
     fig.update_layout(
-        **LAYOUT_BASE,
+        **LAYOUT_BASE, **DEFAULT_AXES,
+        margin=DEFAULT_MARGIN,
         title=dict(text="Portfolio Value Projection", font=dict(size=16)),
         xaxis_title="Year",
         yaxis_title="Portfolio Value (₹)",
@@ -319,12 +322,9 @@ def plot_risk_contribution(weights: pd.Series, cov_matrix: pd.DataFrame, meta: p
         marker=dict(colors=px.colors.qualitative.Pastel, line=dict(color="white", width=2)),
         hovertemplate="<b>%{label}</b><br>Risk Contribution: %{percent}<extra></extra>",
     ))
-    fig.update_layout(
-        **LAYOUT_BASE,
-        title=dict(text="Risk Contribution by Asset", font=dict(size=16)),
-        showlegend=False, height=380,
-        margin=dict(l=10, r=10, t=50, b=10),
-    )
+    fig.update_layout(**LAYOUT_BASE, title=dict(text="Risk Contribution by Asset", font=dict(size=16)),
+                       showlegend=False, height=380)
+    fig.update_layout(margin=TIGHT_MARGIN)
     return fig
 
 
@@ -354,6 +354,7 @@ def plot_comparison_bars(comparison_df: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         **LAYOUT_BASE,
+        margin=DEFAULT_MARGIN,
         title=dict(text="Portfolio Comparison", font=dict(size=16)),
         height=420,
         barmode="group",

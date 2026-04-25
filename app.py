@@ -83,7 +83,7 @@ def sidebar():
             p = st.session_state.profile
             st.markdown(f"**Risk Profile:** {p['badge']} {p['name']}")
             st.markdown(f"**Risk Score:** {get_risk_score(p['name'])}/100")
-        if st.button("🔄 Start Over", use_container_width=True):
+        if st.button("🔄 Start Over", width="stretch"):
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
@@ -217,7 +217,7 @@ def screen_allocation():
 
     col1, col2 = st.columns([1.1, 1])
     with col1:
-        st.plotly_chart(plot_allocation_pie(weights, meta), use_container_width=True)
+        st.plotly_chart(plot_allocation_pie(weights, meta), width="stretch")
     with col2:
         # Table
         rows = []
@@ -230,7 +230,7 @@ def screen_allocation():
             rows.append({"Asset": meta.loc[t, "label"], "Allocation": f"{weights[t]:.1%}",
                          "Amount (₹)": f"₹{amt:,.0f}", "Exp. Return": f"{ret:.2%}",
                          "Post-Tax": f"{post_tax:.2%}"})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     if st.button("Next: Efficient Frontier →"):
         st.session_state.screen = 4; st.rerun()
@@ -242,7 +242,7 @@ def screen_frontier():
         st.session_state.mc_portfolios, st.session_state.frontier,
         st.session_state.optimal, st.session_state.gmvp,
         st.session_state.asset_stats, st.session_state.meta)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.caption("⭐ Green star = Max Sharpe (recommended) · 🔶 Diamond = Min Variance · Colored dots = 10,000 random portfolios")
     if st.button("Next: Diversification →"):
         st.session_state.screen = 5; st.rerun()
@@ -257,19 +257,16 @@ def screen_diversification():
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(plot_correlation_heatmap(
-            st.session_state.cov_matrix.loc[tickers, tickers] /
-            np.outer(st.session_state.cov_matrix.loc[tickers, tickers].values.diagonal()**0.5,
-                     st.session_state.cov_matrix.loc[tickers, tickers].values.diagonal()**0.5),
-            meta), use_container_width=True)
+        corr_matrix = st.session_state.returns[tickers].corr()
+        st.plotly_chart(plot_correlation_heatmap(corr_matrix, meta), width="stretch")
     with c2:
-        st.plotly_chart(plot_sector_bar(weights, meta), use_container_width=True)
+        st.plotly_chart(plot_sector_bar(weights, meta), width="stretch")
 
     c3, c4 = st.columns(2)
     with c3:
-        st.plotly_chart(plot_asset_class_donut(weights, meta), use_container_width=True)
+        st.plotly_chart(plot_asset_class_donut(weights, meta), width="stretch")
     with c4:
-        st.plotly_chart(plot_risk_contribution(weights, st.session_state.cov_matrix.loc[tickers, tickers], meta), use_container_width=True)
+        st.plotly_chart(plot_risk_contribution(weights, st.session_state.cov_matrix.loc[tickers, tickers], meta), width="stretch")
 
     if st.button("Next: Comparison →"):
         st.session_state.screen = 6; st.rerun()
@@ -287,7 +284,7 @@ def screen_comparison():
         "Min Variance":  {"Expected Return": gmvp["return"], "Volatility": gmvp["volatility"], "Sharpe Ratio": gmvp["sharpe"]},
     })
 
-    st.plotly_chart(plot_comparison_bars(cmp), use_container_width=True)
+    st.plotly_chart(plot_comparison_bars(cmp), width="stretch")
 
     # Rebalancing suggestions
     meta = st.session_state.meta
@@ -325,7 +322,7 @@ def screen_projections():
     sip_data  = sip_future_value(initial, sip, ann_ret, horizon)
     paths_df  = monte_carlo_future_paths(initial, sip, ann_ret, ann_vol, horizon, n_paths=1000)
 
-    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), use_container_width=True)
+    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), width="stretch")
 
     c1, c2, c3 = st.columns(3)
     with c1: card("Median Final Value", fmt_inr(paths_df.iloc[-1]["p50"]), f"In {horizon} years", "#4F46E5")
@@ -420,15 +417,18 @@ def screen_insights():
     with c3:
         try:
             from fpdf import FPDF
+            from fpdf.enums import XPos, YPos
             pdf = FPDF(); pdf.add_page(); pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, "Portfolio Optimization Report", ln=True, align="C")
+            pdf.cell(0, 10, "Portfolio Optimization Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
             pdf.set_font("Helvetica", size=11)
-            pdf.cell(0, 8, f"Risk Profile: {profile['name']}", ln=True)
-            pdf.cell(0, 8, f"Expected Return: {opt['return']:.2%} | Volatility: {opt['volatility']:.2%} | Sharpe: {opt['sharpe']:.2f}", ln=True)
-            pdf.ln(4); pdf.set_font("Helvetica", "B", 12); pdf.cell(0, 8, "Asset Allocation", ln=True)
+            pdf.cell(0, 8, f"Risk Profile: {profile['name']}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 8, f"Expected Return: {opt['return']:.2%} | Volatility: {opt['volatility']:.2%} | Sharpe: {opt['sharpe']:.2f}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(4); pdf.set_font("Helvetica", "B", 12); pdf.cell(0, 8, "Asset Allocation", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_font("Helvetica", size=10)
             for _, r in alloc_df.iterrows():
-                pdf.cell(0, 7, f"  {r['Asset']}: {r['Allocation_%']:.2f}% — ₹{r['Amount_INR']:,.0f}", ln=True)
+                # Replace Unicode characters that Helvetica doesn't support
+                asset_label = r['Asset'].replace('—', '-').replace('₹', 'Rs.')
+                pdf.cell(0, 7, f"  {asset_label}: {r['Allocation_%']:.2f}% - Rs.{r['Amount_INR']:,.0f}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             st.download_button("⬇️ Download PDF", bytes(pdf.output()), "portfolio_report.pdf", "application/pdf")
         except Exception as e:
             st.caption(f"PDF unavailable: {e}")

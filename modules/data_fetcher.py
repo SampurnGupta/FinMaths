@@ -218,26 +218,26 @@ def fetch_price_data(tickers: list, period: str = "5y") -> pd.DataFrame:
     if cached is not None:
         return cached
 
-    failed = []
     frames = {}
     for ticker in tickers:
         try:
             data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
             if data.empty:
-                failed.append(ticker)
                 continue
             close = data["Close"]
+            # yfinance 1.x returns multi-level columns even for single ticker
             if isinstance(close, pd.DataFrame):
-                close = close.squeeze()
+                close = close.iloc[:, 0]  # take first (only) column
+            close.name = ticker
             frames[ticker] = close
         except Exception:
-            failed.append(ticker)
+            pass
 
     if not frames:
         return pd.DataFrame()
 
     prices = pd.DataFrame(frames).dropna(how="all")
-    prices = prices.fillna(method="ffill").dropna()
+    prices = prices.ffill().dropna()   # pandas 3.0: ffill() replaces fillna(method='ffill')
     _save_cache(key, prices)
     return prices
 
