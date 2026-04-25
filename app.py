@@ -25,34 +25,168 @@ st.set_page_config(page_title="Portfolio Optimizer", page_icon="📈", layout="w
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-.block-container { padding-top: 1.5rem; }
-section[data-testid="stSidebar"] { background: #1E2139; }
-section[data-testid="stSidebar"] * { color: #E5E7EB !important; }
-section[data-testid="stSidebar"] .stProgress > div > div { background: #4F46E5; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap');
+
+:root {
+    --primary: #6366F1;
+    --primary-glow: rgba(99, 102, 241, 0.5);
+    --secondary: #10B981;
+    --bg-deep: #0F172A;
+    --bg-card: rgba(30, 41, 59, 0.7);
+    --text-main: #F8FAFC;
+    --text-muted: #94A3B8;
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* Global Styles */
+.main {
+    background-color: var(--bg-deep);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, .section-title {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+}
+
+/* Sidebar Styling */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
+    border-right: 1px solid var(--glass-border);
+}
+
+[data-testid="stSidebar"] .stMarkdown {
+    color: var(--text-main);
+}
+
+/* Glassmorphism Cards */
 .metric-card {
-  background: #fff; border-radius: 12px; padding: 18px 22px;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.07); border-left: 4px solid #4F46E5;
-  margin-bottom: 12px;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    position: relative;
+    overflow: hidden;
 }
-.metric-card h3 { margin: 0 0 4px; font-size: 13px; color: #6B7280; font-weight: 500; }
-.metric-card p  { margin: 0; font-size: 26px; font-weight: 700; color: #111827; }
-.metric-card small { color: #6B7280; font-size: 12px; }
-.section-title { font-size: 20px; font-weight: 700; color: #111827; margin: 24px 0 12px; }
-.insight-card {
-  background: #F0FDF4; border-radius: 10px; padding: 14px 18px;
-  border-left: 4px solid #10B981; margin-bottom: 10px; font-size: 14px; color: #065F46;
+
+.metric-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--primary-glow);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 15px var(--primary-glow);
 }
-.warning-card {
-  background: #FEF9C3; border-radius: 10px; padding: 14px 18px;
-  border-left: 4px solid #F59E0B; margin-bottom: 10px; font-size: 14px; color: #92400E;
+
+.metric-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 4px; height: 100%;
+    background: var(--primary);
 }
+
+.metric-card h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-card p {
+    margin: 0;
+    font-size: 32px;
+    font-weight: 800;
+    color: #FFFFFF;
+    font-family: 'Outfit', sans-serif;
+}
+
+.metric-card small {
+    color: var(--text-muted);
+    font-size: 13px;
+    display: block;
+    margin-top: 4px;
+}
+
+/* Buttons */
 .stButton > button {
-  background: #4F46E5; color: white; border: none; border-radius: 8px;
-  padding: 10px 28px; font-weight: 600; font-size: 14px; transition: all 0.2s;
+    background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 15px;
+    transition: all 0.2s;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
-.stButton > button:hover { background: #4338CA; transform: translateY(-1px); }
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+    background: linear-gradient(135deg, #818CF8 0%, #6366F1 100%);
+}
+
+/* Section Title */
+.section-title {
+    font-size: 32px;
+    font-weight: 800;
+    color: #FFFFFF;
+    margin: 32px 0 16px;
+    background: linear-gradient(90deg, #FFFFFF 0%, #94A3B8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.stApp .block-container {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* Progress Bar */
+.stProgress > div > div > div > div {
+    background: linear-gradient(90deg, #6366F1 0%, #10B981 100%);
+}
+
+/* Inputs & Sliders */
+.stSlider [data-baseweb="slider"] {
+    background: var(--bg-card);
+}
+
+/* Custom Alert Box */
+.insight-card, .warning-card {
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+    font-size: 15px;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.insight-card {
+    background: rgba(16, 185, 129, 0.1);
+    border-left: 4px solid #10B981;
+    color: #D1FAE5;
+}
+
+.warning-card {
+    background: rgba(245, 158, 11, 0.1);
+    border-left: 4px solid #F59E0B;
+    color: #FEF3C7;
+}
+
+/* Hide Streamlit Branding */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -76,8 +210,10 @@ def sidebar():
         pct = (st.session_state.screen) / (len(SCREENS) - 1)
         st.progress(pct)
         for i, s in enumerate(SCREENS):
-            icon = "✅" if i < st.session_state.screen else ("▶" if i == st.session_state.screen else "○")
-            st.markdown(f"{'**' if i == st.session_state.screen else ''}{icon} {s}{'**' if i == st.session_state.screen else ''}")
+            active = i == st.session_state.screen
+            icon = "●" if active else "○"
+            color = "#6366F1" if active else "#94A3B8"
+            st.markdown(f'<div style="color:{color}; font-weight:{"600" if active else "400"}; padding: 4px 0;">{icon} {s}</div>', unsafe_allow_html=True)
         st.markdown("---")
         if st.session_state.profile:
             p = st.session_state.profile
@@ -88,14 +224,32 @@ def sidebar():
                 del st.session_state[k]
             st.rerun()
 
-def card(title, value, subtitle="", color="#4F46E5"):
-    st.markdown(f'<div class="metric-card" style="border-left-color:{color}"><h3>{title}</h3><p>{value}</p><small>{subtitle}</small></div>', unsafe_allow_html=True)
+def card(title, value, subtitle="", color="#6366F1"):
+    st.markdown(f'''
+    <div class="metric-card" style="border-left-color:{color}">
+        <h3>{title}</h3>
+        <p>{value}</p>
+        <small>{subtitle}</small>
+    </div>
+    ''', unsafe_allow_html=True)
 
-def fmt_inr(v): return f"₹{v:,.0f}"
+def fmt_inr(v):
+    if v >= 10_000_000:
+        return f"₹{(v/10_000_000):.2f} Cr"
+    elif v >= 100_000:
+        return f"₹{(v/100_000):.2f} L"
+    return f"₹{v:,.0f}"
 
 # ── Screen 1: Profile ─────────────────────────────────────────────────────────
 def screen_profile():
-    st.markdown('<div class="section-title">👤 Your Investment Profile</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🚀 Portfolio Intel</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background: rgba(99, 102, 241, 0.1); border-radius: 12px; padding: 20px; border-left: 4px solid #6366F1; margin-bottom: 24px;">
+        <h2 style="margin:0; font-size: 20px; color: #FFFFFF;">Welcome to the next generation of asset management.</h2>
+        <p style="margin:8px 0 0; color: #94A3B8; font-size: 15px;">Tell us about your financial profile to build a custom, risk-optimized portfolio.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     c1, c2 = st.columns(2)
     with c1:
         age = st.slider("Your Age", 18, 80, 30)
@@ -120,7 +274,7 @@ def screen_profile():
 
 # ── Screen 2: Preferences ─────────────────────────────────────────────────────
 def screen_preferences():
-    st.markdown('<div class="section-title">🎯 Investment Preferences</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎯 Asset Constraints</div>', unsafe_allow_html=True)
     sectors = st.multiselect("Preferred sectors (equity picks)", ["Technology", "Healthcare", "Finance", "Energy", "Consumer"], default=["Technology", "Finance"])
     c1, c2 = st.columns(2)
     with c1:
@@ -147,7 +301,8 @@ def screen_preferences():
 
 # ── Screen 3: Optimization (auto-runs) ───────────────────────────────────────
 def screen_optimization():
-    st.markdown('<div class="section-title">⚙️ Running Optimization…</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">⚡ Computing Optimal Strategy</div>', unsafe_allow_html=True)
+    st.markdown('<p style="color: #94A3B8; margin-bottom: 24px;">Our engine is simulating thousands of market scenarios to find your ideal risk-reward balance.</p>', unsafe_allow_html=True)
     if st.session_state.mc_portfolios is not None:
         st.session_state.screen = 3; st.rerun(); return
 
@@ -193,7 +348,7 @@ def screen_optimization():
 
 # ── Screen 4: Allocation ──────────────────────────────────────────────────────
 def screen_allocation():
-    st.markdown('<div class="section-title">📊 Recommended Portfolio</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">💎 Recommended Allocation</div>', unsafe_allow_html=True)
     opt  = st.session_state.optimal
     meta = st.session_state.meta
     user = st.session_state.user
@@ -237,7 +392,7 @@ def screen_allocation():
 
 # ── Screen 5: Efficient Frontier ─────────────────────────────────────────────
 def screen_frontier():
-    st.markdown('<div class="section-title">📉 Efficient Frontier</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📈 Efficient Frontier Analysis</div>', unsafe_allow_html=True)
     fig = plot_efficient_frontier(
         st.session_state.mc_portfolios, st.session_state.frontier,
         st.session_state.optimal, st.session_state.gmvp,
@@ -249,7 +404,7 @@ def screen_frontier():
 
 # ── Screen 6: Diversification ─────────────────────────────────────────────────
 def screen_diversification():
-    st.markdown('<div class="section-title">🔍 Diversification Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 Diversification Metrics</div>', unsafe_allow_html=True)
     opt  = st.session_state.optimal
     meta = st.session_state.meta
     tickers = [c for c in meta.index if c in opt.index]
@@ -273,7 +428,7 @@ def screen_diversification():
 
 # ── Screen 7: Comparison ──────────────────────────────────────────────────────
 def screen_comparison():
-    st.markdown('<div class="section-title">⚖️ Portfolio Comparison</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">⚖️ Performance Benchmarking</div>', unsafe_allow_html=True)
     opt = st.session_state.optimal
     ew  = st.session_state.ew_portfolio
     gmvp = st.session_state.gmvp
@@ -310,7 +465,7 @@ def screen_comparison():
 
 # ── Screen 8: Projections ─────────────────────────────────────────────────────
 def screen_projections():
-    st.markdown('<div class="section-title">🔮 Future Projections</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔮 Wealth Projections</div>', unsafe_allow_html=True)
     opt  = st.session_state.optimal
     user = st.session_state.user
     horizon = user["horizon"]
@@ -340,7 +495,7 @@ def screen_projections():
 
 # ── Screen 9: Insights & Export ───────────────────────────────────────────────
 def screen_insights():
-    st.markdown('<div class="section-title">💡 Insights & Export</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">💡 Final Insights & Export</div>', unsafe_allow_html=True)
     opt  = st.session_state.optimal
     meta = st.session_state.meta
     cov  = st.session_state.cov_matrix

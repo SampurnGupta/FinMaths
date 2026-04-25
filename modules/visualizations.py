@@ -11,31 +11,47 @@ from plotly.subplots import make_subplots
 
 # ── Theme ─────────────────────────────────────────────────────────────────────
 COLORS = {
-    "primary":   "#4F46E5",   # indigo
-    "secondary": "#06B6D4",   # cyan
-    "success":   "#10B981",   # emerald
-    "warning":   "#F59E0B",   # amber
-    "danger":    "#EF4444",   # red
-    "neutral":   "#6B7280",   # gray
-    "bg":        "#FFFFFF",
-    "grid":      "#F3F4F6",
-    "text":      "#111827",
-    "subtext":   "#6B7280",
-    "mc_scatter":"rgba(99,102,241,0.18)",
+    "primary":   "#6366F1",   # Indigo pop
+    "secondary": "#10B981",   # Emerald
+    "success":   "#10B981",
+    "warning":   "#F59E0B",
+    "danger":    "#EF4444",
+    "neutral":   "#94A3B8",
+    "bg":        "rgba(30, 41, 59, 0.0)", # Transparent to inherit glassmorphism
+    "paper":     "rgba(15, 23, 42, 0.5)",
+    "grid":      "rgba(255, 255, 255, 0.05)",
+    "text":      "#F8FAFC",
+    "subtext":   "#94A3B8",
+    "mc_scatter":"rgba(99, 102, 241, 0.12)",
 }
 
 LAYOUT_BASE = dict(
-    paper_bgcolor=COLORS["bg"],
-    plot_bgcolor=COLORS["bg"],
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Inter, sans-serif", color=COLORS["text"], size=12),
-    legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0),
-    hoverlabel=dict(bgcolor="white", font_size=12, bordercolor="#E5E7EB"),
+    legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0, font=dict(size=11)),
+    hoverlabel=dict(
+        bgcolor="#1E293B",
+        font_size=12,
+        font_color="#F8FAFC",
+        bordercolor="rgba(255,255,255,0.1)"
+    ),
 )
-DEFAULT_MARGIN = dict(l=40, r=20, t=50, b=40)
-TIGHT_MARGIN   = dict(l=10, r=10, t=50, b=10)
+DEFAULT_MARGIN = dict(l=40, r=20, t=60, b=40)
+TIGHT_MARGIN   = dict(l=10, r=10, t=60, b=10)
 DEFAULT_AXES = dict(
-    xaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
-    yaxis=dict(gridcolor=COLORS["grid"], zerolinecolor=COLORS["grid"]),
+    xaxis=dict(
+        gridcolor=COLORS["grid"],
+        zerolinecolor=COLORS["grid"],
+        tickfont=dict(color=COLORS["subtext"]),
+        title=dict(font=dict(color=COLORS["text"]))
+    ),
+    yaxis=dict(
+        gridcolor=COLORS["grid"],
+        zerolinecolor=COLORS["grid"],
+        tickfont=dict(color=COLORS["subtext"]),
+        title=dict(font=dict(color=COLORS["text"]))
+    ),
 )
 
 
@@ -61,10 +77,10 @@ def plot_efficient_frontier(
         mode="markers",
         marker=dict(
             color=mc_portfolios["sharpe"],
-            colorscale="Viridis",
-            size=3,
-            opacity=0.5,
-            colorbar=dict(title="Sharpe", thickness=12, len=0.6),
+            colorscale="Plasma",
+            size=4,
+            opacity=0.4,
+            colorbar=dict(title="Sharpe", thickness=15, len=0.7, x=1.05),
         ),
         name="MC Portfolios",
         hovertemplate="Vol: %{x:.2%}<br>Return: %{y:.2%}<br>Sharpe: %{marker.color:.2f}<extra></extra>",
@@ -144,7 +160,7 @@ def plot_correlation_heatmap(corr_matrix: pd.DataFrame, meta: pd.DataFrame) -> g
     fig = go.Figure(go.Heatmap(
         z=z, x=labels, y=labels,
         colorscale=[
-            [0.0, "#EF4444"], [0.5, "#F9FAFB"], [1.0, "#4F46E5"]
+            [0.0, "#F43F5E"], [0.5, "#1E293B"], [1.0, "#6366F1"]
         ],
         zmin=-1, zmax=1,
         text=np.round(z, 2),
@@ -169,7 +185,7 @@ def plot_correlation_heatmap(corr_matrix: pd.DataFrame, meta: pd.DataFrame) -> g
 def plot_allocation_pie(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
     w = weights[weights > 0.001].sort_values(ascending=False)
     labels = [meta.loc[t, "label"] if t in meta.index else t for t in w.index]
-    colors = px.colors.qualitative.Set2[:len(w)]
+    colors = ["#6366F1", "#10B981", "#F59E0B", "#F43F5E", "#06B6D4", "#8B5CF6"]
 
     fig = go.Figure(go.Pie(
         labels=labels,
@@ -229,7 +245,7 @@ def plot_asset_class_donut(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
     label_map = {"equity": "Equity", "debt": "Debt / Fixed Income", "alt": "Alternatives"}
 
     labels = [label_map.get(k, k) for k in class_weights.index]
-    colors = [color_map.get(k, COLORS["neutral"]) for k in class_weights.index]
+    colors = ["#6366F1", "#10B981", "#F59E0B", "#F43F5E"]
 
     fig = go.Figure(go.Pie(
         labels=labels, values=class_weights.values, hole=0.55,
@@ -319,7 +335,7 @@ def plot_risk_contribution(weights: pd.Series, cov_matrix: pd.DataFrame, meta: p
     fig = go.Figure(go.Pie(
         labels=df["label"], values=df["contrib"], hole=0.45,
         textinfo="label+percent", textfont=dict(size=10),
-        marker=dict(colors=px.colors.qualitative.Pastel, line=dict(color="white", width=2)),
+        marker=dict(colors=["#6366F1", "#10B981", "#F59E0B", "#F43F5E", "#06B6D4", "#8B5CF6"], line=dict(color="white", width=2)),
         hovertemplate="<b>%{label}</b><br>Risk Contribution: %{percent}<extra></extra>",
     ))
     fig.update_layout(**LAYOUT_BASE, title=dict(text="Risk Contribution by Asset", font=dict(size=16)),
@@ -332,7 +348,7 @@ def plot_risk_contribution(weights: pd.Series, cov_matrix: pd.DataFrame, meta: p
 def plot_comparison_bars(comparison_df: pd.DataFrame) -> go.Figure:
     metrics = ["Expected Return", "Volatility", "Sharpe Ratio"]
     portfolios = comparison_df.columns.tolist()
-    color_list = [COLORS["primary"], COLORS["success"], COLORS["warning"], COLORS["neutral"]]
+    color_list = ["#6366F1", "#10B981", "#F59E0B", "#F43F5E"]
 
     fig = make_subplots(rows=1, cols=3, subplot_titles=metrics)
 
