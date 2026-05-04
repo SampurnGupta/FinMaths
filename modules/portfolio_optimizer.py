@@ -175,9 +175,31 @@ def monte_carlo_portfolios(
     
     # Identify Top 3 distinct strategies
     df["strategy"] = "Random"
-    df.loc[df["volatility"].idxmin(), "strategy"] = "Balanced (Min Risk)"
-    df.loc[df["sharpe"].idxmax(), "strategy"] = "Optimal (Max Sharpe)"
-    df.loc[df["return"].idxmax(), "strategy"] = "Growth (Higher Return)"
+    
+    # 1. Balanced (Min Risk)
+    idx_balanced = df["volatility"].idxmin()
+    df.loc[idx_balanced, "strategy"] = "Balanced (Min Risk)"
+    
+    # 2. Optimal (Max Sharpe)
+    sharpe_sorted = df.sort_values("sharpe", ascending=False)
+    idx_optimal = sharpe_sorted.index[0]
+    # If it overlaps with Balanced, pick the next best Sharpe that is at least slightly different
+    i = 0
+    while idx_optimal == idx_balanced and i < len(sharpe_sorted) - 1:
+        i += 1
+        idx_optimal = sharpe_sorted.index[i]
+    df.loc[idx_optimal, "strategy"] = "Optimal (Max Sharpe)"
+    
+    # 3. Growth (Higher Return)
+    ret_sorted = df.sort_values("return", ascending=False)
+    idx_growth = ret_sorted.index[0]
+    i = 0
+    while (idx_growth == idx_balanced or idx_growth == idx_optimal) and i < len(ret_sorted) - 1:
+        i += 1
+        idx_growth = ret_sorted.index[i]
+    df.loc[idx_growth, "strategy"] = "Growth (Higher Return)"
+    
+    return df
     
     return df
 
@@ -325,3 +347,68 @@ def diversification_score(weights: np.ndarray, cov_matrix: np.ndarray) -> float:
     # Saturation at 10 assets
     score = (effective_n / 10.0) * 10.0
     return round(min(10.0, score), 2)
+
+
+def get_diversification_advantages(weights: np.ndarray, cov_matrix: np.ndarray, asset_stats: pd.DataFrame, meta: pd.DataFrame):
+    """
+    Returns a dictionary of benefits and benchmark comparisons.
+    """
+    # 1. Volatility Reduction (Correlation Benefit)
+    # The difference between the weighted average volatility and the actual portfolio volatility.
+    tickers = asset_stats.index.tolist()
+    # We need to make sure weights align with asset_stats index
+    # (Assuming they already do from the calling context in app.py)
+    individual_vols = asset_stats["volatility"].values
+    weighted_avg_vol = np.dot(weights, individual_vols)
+    
+    # Portfolio vol calculation (annualized)
+    portfolio_vol = np.sqrt(weights @ cov_matrix @ weights) * np.sqrt(12)
+    
+    # Risk reduction is the 'free lunch'
+    risk_reduction = max(0, weighted_avg_vol - portfolio_vol)
+    
+    # 2. Benchmarks
+    # Market Proxy (Nifty 50 or highest return equity)
+    market_ticker = "^NSEI" if "^NSEI" in asset_stats.index else None
+    if not market_ticker:
+        # Fallback to asset with highest return if no Nifty
+        market_ticker = asset_stats["return"].idxmax()
+    market_stats = asset_stats.loc[market_ticker]
+    
+    # Debt Proxy (SBI FD or lowest volatility)
+    debt_ticker = "SBI_FD" if "SBI_FD" in asset_stats.index else None
+    if not debt_ticker:
+        debt_ticker = asset_stats["volatility"].idxmin()
+    debt_stats = asset_stats.loc[debt_ticker]
+    
+    # Adjust benchmarks for tax and inflation (Real Returns)
+    # Market (Equity): LTCG ~12.5%
+    m_cat = meta.loc[market_ticker, "asset_class"] if market_ticker in meta.index else "equity"
+    m_tax = 0.125 if m_cat == "equity" else 0.30
+    m_adj_ret = (market_stats["return"] * (1 - m_tax)) - INFLATION_RATE
+    m_sharpe = (m_adj_ret - RISK_FREE_RATE_ANNUAL) / market_stats["volatility"] if market_stats["volatility"] > 0 else 0
+    
+    # Debt: Flat ~30%
+    d_cat = meta.loc[debt_ticker, "asset_class"] if debt_ticker in meta.index else "debt"
+    d_tax = 0.30 if d_cat == "debt" else 0.125
+    d_adj_ret = (debt_stats["return"] * (1 - d_tax)) - INFLATION_RATE
+    d_sharpe = (d_adj_ret - RISK_FREE_RATE_ANNUAL) / debt_stats["volatility"] if debt_stats["volatility"] > 0 else 0
+
+    # Update stats for return to real returns
+    m_stats_adj = market_stats.copy()
+    m_stats_adj["return"] = m_adj_ret
+    m_stats_adj["sharpe"] = m_sharpe
+
+    d_stats_adj = debt_stats.copy()
+    d_stats_adj["return"] = d_adj_ret
+    d_stats_adj["sharpe"] = d_sharpe
+    
+    return {
+        "risk_reduction": risk_reduction,
+        "weighted_avg_vol": weighted_avg_vol,
+        "portfolio_vol": portfolio_vol,
+        "market": m_stats_adj,
+        "debt": d_stats_adj,
+        "market_label": market_ticker,
+        "debt_label": debt_ticker
+    }

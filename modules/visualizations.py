@@ -384,3 +384,102 @@ def plot_comparison_bars(comparison_df: pd.DataFrame) -> go.Figure:
         barmode="group",
     )
     return fig
+
+
+def plot_advantage_radar(comparison_df: pd.DataFrame) -> go.Figure:
+    """
+    Radar chart comparing dimensions for different portfolios.
+    Dimensions: Expected Return, Volatility (Inverted), Sharpe Ratio
+    """
+    fig = go.Figure()
+    
+    # We want higher to be better for all axes in radar
+    # So we invert Volatility: 1 - (vol / max_vol_in_set)
+    radar_df = comparison_df.copy()
+    max_vol = radar_df.loc["Volatility"].max()
+    radar_df.loc["Volatility"] = radar_df.loc["Volatility"].apply(lambda x: (max_vol - x) / max_vol if max_vol > 0 else 1)
+    # Rename Volatility for radar display
+    radar_df = radar_df.rename(index={"Volatility": "Stability (Inv. Risk)"})
+
+    categories = radar_df.index.tolist()
+    # Normalize others to [0, 1] for visual balance
+    for cat in categories:
+        m = radar_df.loc[cat].max()
+        if m > 0:
+            radar_df.loc[cat] = radar_df.loc[cat] / m
+
+    portfolios = radar_df.columns.tolist()
+    colors = ["#6366F1", "#10B981", "#F59E0B", "#F43F5E"]
+
+    for i, p in enumerate(portfolios):
+        fig.add_trace(go.Scatterpolar(
+            r=radar_df[p].tolist() + [radar_df[p].tolist()[0]],
+            theta=categories + [categories[0]],
+            fill='toself',
+            name=p,
+            line=dict(color=colors[i % len(colors)], width=2),
+            marker=dict(size=6),
+        ))
+
+    fig.update_layout(
+        **LAYOUT_BASE,
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 1], gridcolor=COLORS["grid"], showticklabels=False),
+            angularaxis=dict(gridcolor=COLORS["grid"], linecolor=COLORS["grid"], tickfont=dict(size=10)),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        showlegend=True,
+        title=dict(text="Efficiency Radar", font=dict(size=16)),
+        height=480,
+    )
+    # Set legend explicitly to override LAYOUT_BASE without keyword conflict
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5))
+    return fig
+
+
+def plot_frontier_gap(frontier: pd.DataFrame, benchmarks: list, optimal: pd.Series) -> go.Figure:
+    """
+    Scatter plot highlighting the 'gap' between benchmarks and the frontier.
+    benchmarks: list of dicts with {label, volatility, return}
+    """
+    fig = go.Figure()
+
+    # Frontier line
+    fig.add_trace(go.Scatter(
+        x=frontier["volatility"], y=frontier["return"],
+        mode="lines", line=dict(color=COLORS["primary"], width=2, dash="dash"),
+        name="Efficient Frontier",
+        hoverinfo="skip"
+    ))
+
+    # Optimal point
+    fig.add_trace(go.Scatter(
+        x=[optimal["volatility"]], y=[optimal["return"]],
+        mode="markers", marker=dict(symbol="star", size=16, color=COLORS["success"], line=dict(color="white", width=1.5)),
+        name="Your Portfolio",
+        hovertemplate="<b>Your Portfolio</b><br>Vol: %{x:.2%}<br>Return: %{y:.2%}<extra></extra>"
+    ))
+
+    # Benchmarks
+    colors = ["#F59E0B", "#EF4444", "#06B6D4"]
+    for i, b in enumerate(benchmarks):
+        fig.add_trace(go.Scatter(
+            x=[b["volatility"]], y=[b["return"]],
+            mode="markers+text",
+            marker=dict(size=12, color=colors[i % len(colors)], line=dict(color="white", width=1)),
+            text=[b["label"]], textposition="bottom center",
+            textfont=dict(size=10, color=COLORS["text"]),
+            name=b["label"],
+            hovertemplate=f"<b>{b['label']}</b><br>Vol: %{{x:.2%}}<br>Return: %{{y:.2%}}<extra></extra>"
+        ))
+
+    fig.update_layout(
+        **LAYOUT_BASE, **DEFAULT_AXES,
+        title=dict(text="The Efficiency Gap", font=dict(size=16)),
+        xaxis_title="Risk (Annual Volatility)", 
+        yaxis_title="Expected Real Return",
+        xaxis_tickformat=".0%", yaxis_tickformat=".0%",
+        height=450,
+        showlegend=True,
+    )
+    return fig

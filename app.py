@@ -17,14 +17,14 @@ from modules.risk_profiler import (calculate_risk_profile, adjust_for_preference
                                     get_risk_score, estimate_post_tax_return, TAX_SLABS)
 from modules.data_fetcher import build_combined_returns, get_asset_universe
 from modules.portfolio_optimizer import (monte_carlo_portfolios, efficient_frontier,
-                                          optimize_max_sharpe, equal_weight_portfolio,
                                           compute_asset_individual_stats, diversification_score,
-                                          RISK_FREE_RATE_ANNUAL)
+                                          RISK_FREE_RATE_ANNUAL, get_diversification_advantages)
 from modules.projections import (sip_future_value, monte_carlo_future_paths,
                                   goal_sip_required, goal_achievement_probability)
 from modules.visualizations import (plot_efficient_frontier, plot_correlation_heatmap,
                                      plot_allocation_pie, plot_sector_bar, plot_asset_class_donut,
-                                     plot_sip_projection, plot_risk_contribution, plot_comparison_bars)
+                                     plot_sip_projection, plot_risk_contribution, plot_comparison_bars,
+                                     plot_advantage_radar, plot_frontier_gap)
 from modules.llm_engine import (get_llm_explanation, explain_chart, explain_tax_logic, 
                                  explain_monte_carlo, get_portfolio_summary, get_final_recommendation,
                                  get_chat_response)
@@ -201,7 +201,7 @@ footer {visibility: hidden;}
 st.markdown(CSS, unsafe_allow_html=True)
 
 SCREENS = ["Profile", "Preferences", "Optimization", "Allocation",
-           "Frontier", "Diversification", "Comparison", "Projections", "Insights & Export", "AI Concierge"]
+           "Frontier", "Diversification", "Diversification Edge", "Comparison", "Projections", "Insights & Export", "AI Concierge"]
 
 def init_state():
     defaults = dict(screen=0, profile=None, preferences=None, returns=None,
@@ -503,8 +503,72 @@ def screen_diversification():
     with c4:
         st.plotly_chart(plot_risk_contribution(weights, st.session_state.cov_matrix.loc[tickers, tickers], meta), width="stretch")
 
-    if st.button("Next: Comparison →"):
+    if st.button("Next: Advantage Edge →"):
         st.session_state.screen = 6; st.rerun()
+
+def screen_advantage():
+    st.markdown('<div class="section-title">🛡️ The Diversification Edge</div>', unsafe_allow_html=True)
+    
+    opt = st.session_state.optimal
+    meta = st.session_state.meta
+    cov = st.session_state.cov_matrix
+    stats = st.session_state.asset_stats
+    user = st.session_state.user
+    
+    # Ensure indices align
+    tickers = [c for c in meta.index if c in opt.index]
+    weights = opt[tickers].values
+    
+    adv = get_diversification_advantages(weights, cov.loc[tickers, tickers].values, stats, meta)
+    
+    # 1. Metric Cards
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        # card("Correlation Benefit", f"+{adv['risk_reduction']:.2%}", "Risk reduction vs single assets", "#6366F1")
+        card("Correlation Benefit", f"+{adv['risk_reduction']:.2%}", "#6366F1")
+    with c2:
+        m_ret = adv["market"]["return"]
+        card(f"Vs. {adv['market_label']}", f"{opt['return'] - m_ret:+.2%}", "Excess real return", "#10B981")
+    with c3:
+        card("Efficiency Ratio", f"{opt['sharpe']:.2f} SR", f"Market SR: {adv['market']['sharpe']:.2f}", "#F59E0B")
+
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Radar
+        bench_df = pd.DataFrame({
+            "Your Portfolio": {"Expected Return": opt["return"], "Volatility": opt["volatility"], "Sharpe Ratio": opt["sharpe"]},
+            "Market (Equity)": {"Expected Return": adv["market"]["return"], "Volatility": adv["market"]["volatility"], "Sharpe Ratio": adv["market"]["sharpe"]},
+            "Fixed Income": {"Expected Return": adv["debt"]["return"], "Volatility": adv["debt"]["volatility"], "Sharpe Ratio": adv["debt"]["sharpe"]}
+        })
+        st.plotly_chart(plot_advantage_radar(bench_df), width="stretch")
+    
+    with col2:
+        # Frontier Gap
+        benchmarks = [
+            {"label": adv["market_label"], "volatility": adv["market"]["volatility"], "return": adv["market"]["return"]},
+            {"label": adv["debt_label"], "volatility": adv["debt"]["volatility"], "return": adv["debt"]["return"]}
+        ]
+        st.plotly_chart(plot_frontier_gap(st.session_state.frontier, benchmarks, opt), width="stretch")
+
+    st.markdown("---")
+    
+    st.markdown(f"""
+    <div class="insight-card">
+        <b>💡 Why Diversify?</b><br>
+        By combining {len(tickers)} assets, your portfolio achieves a 'Diversification Benefit' of <b>{adv['risk_reduction']:.2%}</b>. 
+        This means you are getting more return for less volatility than if you had simply invested in these assets separately.
+    </div>
+    """, unsafe_allow_html=True)
+
+    c_prev, c_next = st.columns([1, 4])
+    with c_prev:
+        if st.button("← Back"):
+            st.session_state.screen = 5; st.rerun()
+    with c_next:
+        if st.button("Next: Comparison →"):
+            st.session_state.screen = 7; st.rerun()
 
 def stream_text(text: str, delay: float = 0.01):
     for word in text.split(" "):
@@ -577,7 +641,7 @@ def screen_chat():
             st.session_state.chat_history.append({"role": "assistant", "content": response})
 
     if st.button("⬅️ Back to Insights"):
-        st.session_state.screen = 8; st.rerun()
+        st.session_state.screen = 9; st.rerun()
 
 # ── Screen 7: Comparison ──────────────────────────────────────────────────────
 def screen_comparison():
@@ -618,7 +682,7 @@ def screen_comparison():
     st.info(f"Estimated annual tax on equity gains: **₹{ltcg_tax:,.0f}** (LTCG 12.5% above ₹1.25L) | Debt/FD: **₹{debt_tax:,.0f}** (@ 30%)")
 
     if st.button("Next: Projections →"):
-        st.session_state.screen = 7; st.rerun()
+        st.session_state.screen = 8; st.rerun()
 
 # ── Screen 8: Projections ─────────────────────────────────────────────────────
 def screen_projections():
@@ -649,7 +713,7 @@ def screen_projections():
         st.success(f"🎯 **{prob:.0%} probability** of reaching ₹{target:,.0f} in {horizon} years · Required SIP if not met: ₹{req_sip:,.0f}/month")
 
     if st.button("Next: Insights & Export →"):
-        st.session_state.screen = 8; st.rerun()
+        st.session_state.screen = 9; st.rerun()
 
 # ── Screen 9: Insights & Export ───────────────────────────────────────────────
 def screen_insights():
@@ -758,7 +822,7 @@ def screen_insights():
 
     st.markdown("---")
     if st.button("Final Step: Chat with AI Advisor →"):
-        st.session_state.screen = 9; st.rerun()
+        st.session_state.screen = 10; st.rerun()
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -773,10 +837,11 @@ def main():
     elif s == 3: screen_allocation()
     elif s == 4: screen_frontier()
     elif s == 5: screen_diversification()
-    elif s == 6: screen_comparison()
-    elif s == 7: screen_projections()
-    elif s == 8: screen_insights()
-    elif s == 9: screen_chat()
+    elif s == 6: screen_advantage()
+    elif s == 7: screen_comparison()
+    elif s == 8: screen_projections()
+    elif s == 9: screen_insights()
+    elif s == 10: screen_chat()
 
 if __name__ == "__main__":
     main()
