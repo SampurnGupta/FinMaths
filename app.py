@@ -29,7 +29,8 @@ from modules.llm_engine import (get_llm_explanation, explain_chart, explain_tax_
                                  explain_monte_carlo, get_portfolio_summary, get_final_recommendation,
                                  get_chat_response)
 
-st.set_page_config(page_title="Portfolio Optimizer", page_icon="📈", layout="wide")
+# st.set_page_config(page_title="Portfolio Optimizer", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Portfolio Optimizer", layout="wide")
 
 CSS = """
 <style>
@@ -215,7 +216,8 @@ def init_state():
 
 def sidebar():
     with st.sidebar:
-        st.markdown("## 📈 Portfolio Optimizer")
+        # st.markdown("## 📈 Portfolio Optimizer")
+        st.markdown("## Portfolio Optimizer")
         st.markdown("---")
         pct = (st.session_state.screen) / (len(SCREENS) - 1)
         st.progress(pct)
@@ -254,7 +256,7 @@ def fmt_inr(v):
 
 # ── Screen 1: Profile ─────────────────────────────────────────────────────────
 def screen_profile():
-    st.markdown('<div class="section-title">🚀 Portfolio Intel</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Portfolio Intel</div>', unsafe_allow_html=True)
     st.markdown("""
     <div style="background: rgba(99, 102, 241, 0.1); border-radius: 12px; padding: 20px; border-left: 4px solid #6366F1; margin-bottom: 24px;">
         <h2 style="margin:0; font-size: 20px; color: #FFFFFF;">Welcome to the next generation of asset management.</h2>
@@ -307,11 +309,11 @@ def screen_profile():
             rows.append({"Asset": info["label"], "Category": info["category"].upper(), "Sector": info["sector"], "Currency": info.get("currency", "INR")})
         for k, info in universe["hardcoded"].items():
             rows.append({"Asset": info["label"], "Category": info["category"].upper(), "Sector": info["sector"], "Currency": "INR (Assumed)"})
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 # ── Screen 2: Preferences ─────────────────────────────────────────────────────
 def screen_preferences():
-    st.markdown('<div class="section-title">🎯 Asset Constraints</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Asset Constraints</div>', unsafe_allow_html=True)
     sectors = st.multiselect("Preferred sectors (equity picks)", ["Technology", "Healthcare", "Finance", "Energy", "Consumer"], default=["Technology", "Finance"])
     c1, c2 = st.columns(2)
     with c1:
@@ -375,17 +377,16 @@ def screen_optimization():
         st.rerun()
 
     mc = st.session_state.mc_portfolios
-    st.success("Simulations complete! We've identified 3 distinct strategies for you.")
-    
-    # Selection UI
     top_3 = mc[mc["strategy"] != "Random"].copy()
+    num_strategies = len(top_3)
+    st.success(f"Simulations complete! We've identified {num_strategies} distinct strategies for you.")
     
     # Sort for consistent display: Balanced -> Optimal -> Growth
     order = {"Balanced (Min Risk)": 0, "Optimal (Max Sharpe)": 1, "Growth (Higher Return)": 2}
     top_3["order"] = top_3["strategy"].map(order)
     top_3 = top_3.sort_values("order")
 
-    cols = st.columns(3)
+    cols = st.columns(num_strategies)
     for i, (idx, row) in enumerate(top_3.iterrows()):
         with cols[i]:
             st.markdown(f"### {row['strategy']}")
@@ -440,7 +441,7 @@ def screen_allocation():
 
     col1, col2 = st.columns([1.1, 1])
     with col1:
-        st.plotly_chart(plot_allocation_pie(weights, meta), use_container_width=True)
+        st.plotly_chart(plot_allocation_pie(weights, meta), width="stretch")
     with col2:
         # Table
         rows = []
@@ -465,7 +466,7 @@ def screen_frontier():
         st.session_state.mc_portfolios, st.session_state.frontier,
         st.session_state.optimal, st.session_state.gmvp,
         st.session_state.asset_stats, st.session_state.meta)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     
     if st.session_state.groq_key:
         if st.button("🤖 Explain the Efficient Frontier"):
@@ -487,14 +488,14 @@ def screen_diversification():
     c1, c2 = st.columns(2)
     with c1:
         corr_matrix = st.session_state.returns[tickers].corr()
-        st.plotly_chart(plot_correlation_heatmap(corr_matrix, meta), use_container_width=True)
+        st.plotly_chart(plot_correlation_heatmap(corr_matrix, meta), width="stretch")
         if st.session_state.groq_key:
             if st.button("🤖 Explain Correlations"):
                 with st.spinner("..."):
                     summary = f"Correlation matrix for {len(tickers)} assets."
                     st.info(explain_chart("Correlation Matrix", summary, st.session_state.groq_key))
     with c2:
-        st.plotly_chart(plot_sector_bar(weights, meta), use_container_width=True)
+        st.plotly_chart(plot_sector_bar(weights, meta), width="stretch")
 
     c3, c4 = st.columns(2)
     with c3:
@@ -586,11 +587,11 @@ def screen_comparison():
     gmvp = st.session_state.gmvp
 
     cmp = pd.DataFrame({
-        "Recommended": {"Exp. Return (Real)": opt["return"], "Volatility": opt["volatility"], "Sharpe Ratio": opt["sharpe"]},
-        "Equal Weight": {"Exp. Return (Real)": ew["return"],  "Volatility": ew["volatility"],  "Sharpe Ratio": ew["sharpe"]},
-        "Min Variance":  {"Exp. Return (Real)": gmvp["return"], "Volatility": gmvp["volatility"], "Sharpe Ratio": gmvp["sharpe"]},
+        "Recommended": {"Expected Return": opt["return"], "Volatility": opt["volatility"], "Sharpe Ratio": opt["sharpe"]},
+        "Equal Weight": {"Expected Return": ew["return"],  "Volatility": ew["volatility"],  "Sharpe Ratio": ew["sharpe"]},
+        "Min Variance":  {"Expected Return": gmvp["return"], "Volatility": gmvp["volatility"], "Sharpe Ratio": gmvp["sharpe"]},
     })
-
+    
     st.plotly_chart(plot_comparison_bars(cmp), width="stretch")
 
     # Rebalancing suggestions
@@ -633,7 +634,7 @@ def screen_projections():
     sip_data  = sip_future_value(initial, sip, ann_ret, horizon)
     paths_df, worst_case = monte_carlo_future_paths(initial, sip, ann_ret, ann_vol, horizon, n_paths=1000)
 
-    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), use_container_width=True)
+    st.plotly_chart(plot_sip_projection(paths_df, sip_data, initial), width="stretch")
     
     c1, c2, c3, c4 = st.columns(4)
     with c1: card("Median Final Value", fmt_inr(paths_df.iloc[-1]["p50"]), f"In {horizon} years", "#6366F1")

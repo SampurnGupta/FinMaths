@@ -346,7 +346,7 @@ def plot_risk_contribution(weights: pd.Series, cov_matrix: pd.DataFrame, meta: p
         marker=dict(colors=["#6366F1", "#10B981", "#F59E0B", "#F43F5E", "#06B6D4", "#8B5CF6"], line=dict(color="white", width=2)),
         hovertemplate="<b>%{label}</b><br>Risk Contribution: %{percent}<extra></extra>",
     ))
-    fig.update_layout(**LAYOUT_BASE, title=dict(text="Risk Contribution by Asset", font=dict(size=16)),
+    fig.update_layout(**LAYOUT_BASE, title=dict(text="Asset Breakdown", font=dict(size=16)),
                        showlegend=False, height=380)
     fig.update_layout(margin=TIGHT_MARGIN)
     return fig
