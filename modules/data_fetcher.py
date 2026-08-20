@@ -5,193 +5,19 @@ Caches fetched data for 24 hours to avoid redundant API calls.
 """
 
 import os
-import pickle
+import psycopg2.extras
 import numpy as np
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
-
-# ── Hardcoded Assets (non-tradeable / limited yfinance coverage) ─────────────
-HARDCODED_ASSETS = {
-    "SBI_FD": {
-        "label": "SBI Fixed Deposit",
-        "category": "fd",
-        "sector": "Fixed Income",
-        "annual_return": 0.070,
-        "annual_vol": 0.0005,
-        "equity_corr": 0.00,
-    },
-    "HDFC_FD": {
-        "label": "HDFC Fixed Deposit",
-        "category": "fd",
-        "sector": "Fixed Income",
-        "annual_return": 0.0725,
-        "annual_vol": 0.0005,
-        "equity_corr": 0.00,
-    },
-    "ICICI_FD": {
-        "label": "ICICI Bank Fixed Deposit",
-        "category": "fd",
-        "sector": "Fixed Income",
-        "annual_return": 0.075,
-        "annual_vol": 0.0005,
-        "equity_corr": 0.00,
-    },
-    "POST_OFFICE_TD": {
-        "label": "Post Office Term Deposit",
-        "category": "fd",
-        "sector": "Fixed Income",
-        "annual_return": 0.075,
-        "annual_vol": 0.0005,
-        "equity_corr": 0.00,
-    },
-    # Indian Bonds
-    "INDIA_GOVT_10Y": {
-        "label": "India 10Y Govt Bond",
-        "category": "bond",
-        "sector": "Fixed Income",
-        "annual_return": 0.072,
-        "annual_vol": 0.030,
-        "equity_corr": -0.15,
-    },
-    "INDIA_CORP_AAA": {
-        "label": "India AAA Corp Bond",
-        "category": "bond",
-        "sector": "Fixed Income",
-        "annual_return": 0.080,
-        "annual_vol": 0.040,
-        "equity_corr": -0.10,
-    },
-    # International Bonds
-    "US_TREASURY_10Y": {
-        "label": "US Treasury 10Y",
-        "category": "bond",
-        "sector": "Fixed Income",
-        "annual_return": 0.045,
-        "annual_vol": 0.050,
-        "equity_corr": -0.20,
-    },
-    "US_CORP_IG": {
-        "label": "US Corp IG Bond",
-        "category": "bond",
-        "sector": "Fixed Income",
-        "annual_return": 0.055,
-        "annual_vol": 0.060,
-        "equity_corr": -0.10,
-    },
-    # REITs (hardcoded — limited yfinance India REIT coverage)
-    "EMBASSY_REIT": {
-        "label": "Embassy Office Parks REIT",
-        "category": "reit",
-        "sector": "Real Estate",
-        "annual_return": 0.080,
-        "annual_vol": 0.150,
-        "equity_corr": 0.45,
-    },
-    "MINDSPACE_REIT": {
-        "label": "Mindspace Business Parks REIT",
-        "category": "reit",
-        "sector": "Real Estate",
-        "annual_return": 0.075,
-        "annual_vol": 0.140,
-        "equity_corr": 0.42,
-    },
-    "BROOKFIELD_REIT": {
-        "label": "Brookfield India REIT",
-        "category": "reit",
-        "sector": "Real Estate",
-        "annual_return": 0.085,
-        "annual_vol": 0.160,
-        "equity_corr": 0.48,
-    },
-    "INFLATION_LINKED_BOND": {
-        "label": "Inflation Linked Bond",
-        "category": "bond",
-        "sector": "Fixed Income",
-        "annual_return": 0.065, # Approx real return + inflation
-        "annual_vol": 0.040,
-        "equity_corr": -0.05,
-    }
-}
-
-# ── Live Asset Universe (fetched from yfinance) ───────────────────────────────
-LIVE_ASSETS = {
-    # Broad Market
-    "^NSEI": {"label": "Nifty 50", "category": "equity", "sector": "Broad Market", "currency": "INR"},
-    "^NSEBANK": {"label": "Nifty Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
-    # Tech / IT
-    "INFY.NS": {"label": "Infosys", "category": "equity", "sector": "Technology", "currency": "INR"},
-    "TCS.NS": {"label": "TCS", "category": "equity", "sector": "Technology", "currency": "INR"},
-    "WIPRO.NS": {"label": "Wipro", "category": "equity", "sector": "Technology", "currency": "INR"},
-    # Healthcare
-    "SUNPHARMA.NS": {"label": "Sun Pharma", "category": "equity", "sector": "Healthcare", "currency": "INR"},
-    "DRREDDY.NS": {"label": "Dr. Reddy's", "category": "equity", "sector": "Healthcare", "currency": "INR"},
-    # Finance
-    "HDFCBANK.NS": {"label": "HDFC Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
-    "ICICIBANK.NS": {"label": "ICICI Bank", "category": "equity", "sector": "Finance", "currency": "INR"},
-    "SBIN.NS": {"label": "SBI", "category": "equity", "sector": "Finance", "currency": "INR"},
-    # Energy
-    "RELIANCE.NS": {"label": "Reliance Industries", "category": "equity", "sector": "Energy", "currency": "INR"},
-    "ONGC.NS": {"label": "ONGC", "category": "equity", "sector": "Energy", "currency": "INR"},
-    # Consumer / FMCG
-    "HINDUNILVR.NS": {"label": "Hindustan Unilever", "category": "equity", "sector": "Consumer", "currency": "INR"},
-    "MARUTI.NS": {"label": "Maruti Suzuki", "category": "equity", "sector": "Consumer", "currency": "INR"},
-    # International / US
-    "SPY": {"label": "S&P 500 ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
-    "QQQ": {"label": "NASDAQ ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
-    "EEM": {"label": "Emerging Markets ETF", "category": "equity", "sector": "International", "currency": "USD"},
-    "IVE": {"label": "Value ETF (S&P 500)", "category": "equity", "sector": "US Market", "currency": "USD"},
-    "IVW": {"label": "Growth ETF (S&P 500)", "category": "equity", "sector": "US Market", "currency": "USD"},
-    "USMV": {"label": "Low Volatility ETF", "category": "equity", "sector": "US Market", "currency": "USD"},
-    # Commodities
-    "GOLDBEES.NS": {"label": "Gold BeES ETF", "category": "commodity", "sector": "Commodities", "currency": "INR"},
-    "SILVERBEES.NS": {"label": "Silver BeES ETF", "category": "commodity", "sector": "Commodities", "currency": "INR"},
-    "GLD": {"label": "SPDR Gold ETF", "category": "commodity", "sector": "Commodities", "currency": "USD"},
-    # Crypto
-    "BTC-USD": {"label": "Bitcoin", "category": "commodity", "sector": "Crypto", "currency": "USD"},
-    "ETH-USD": {"label": "Ethereum", "category": "commodity", "sector": "Crypto", "currency": "USD"},
-    "SOL-USD": {"label": "Solana", "category": "commodity", "sector": "Crypto", "currency": "USD"},
-}
-
-# Sector → equity/debt/alt classification for constraint mapping
-CATEGORY_CLASS = {
-    "equity": "equity",
-    "commodity": "alt",
-    "reit": "alt",
-    "bond": "debt",
-    "fd": "debt",
-}
-
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-CACHE_TTL_HOURS = 24
-
-
-def _cache_path(key: str) -> str:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    return os.path.join(CACHE_DIR, f"{key}.pkl")
-
-
-def _load_cache(key: str):
-    path = _cache_path(key)
-    if not os.path.exists(path):
-        return None
-    with open(path, "rb") as f:
-        ts, data = pickle.load(f)
-    if datetime.now() - ts > timedelta(hours=CACHE_TTL_HOURS):
-        return None
-    return data
-
-
-def _save_cache(key: str, data):
-    with open(_cache_path(key), "wb") as f:
-        pickle.dump((datetime.now(), data), f)
-
+from modules.db import get_db_connection
 
 def get_asset_universe(preferences: dict) -> dict:
     """
-    Returns filtered asset dict based on user preferences.
-    Always includes broad market + sector picks. Adds bonds/gold/intl/reits per prefs.
+    Returns filtered asset dict based on user preferences by querying the Postgres assets table.
     """
+    selected_tickers = {"^NSEI", "HDFCBANK.NS", "RELIANCE.NS"}  # always included base
+    
     sectors = preferences.get("sectors", [])
     sector_map = {
         "Technology": ["INFY.NS", "TCS.NS", "WIPRO.NS"],
@@ -200,82 +26,170 @@ def get_asset_universe(preferences: dict) -> dict:
         "Energy": ["RELIANCE.NS", "ONGC.NS"],
         "Consumer": ["HINDUNILVR.NS", "MARUTI.NS"],
     }
-
-    selected_live = {"^NSEI", "HDFCBANK.NS", "RELIANCE.NS"}  # always included base
     for s in sectors:
-        for ticker in sector_map.get(s, []):
-            selected_live.add(ticker)
-
-    selected_hardcoded = set()
+        selected_tickers.update(sector_map.get(s, []))
 
     if preferences.get("interested_international", False):
-        selected_live.update(["SPY", "QQQ", "EEM", "IVE", "IVW", "USMV"])
-        selected_hardcoded.update(["US_TREASURY_10Y", "US_CORP_IG"])
+        selected_tickers.update(["SPY", "QQQ", "EEM", "IVE", "IVW", "USMV", "US_TREASURY_10Y", "US_CORP_IG"])
 
     if preferences.get("interested_commodities", False):
-        selected_live.update(["GOLDBEES.NS", "SILVERBEES.NS"])
-        # Optional: Add crypto if interested in commodities/alternatives
-        selected_live.update(["BTC-USD", "ETH-USD", "SOL-USD"])
+        selected_tickers.update(["GOLDBEES.NS", "SILVERBEES.NS", "BTC-USD", "ETH-USD", "SOL-USD"])
 
     if preferences.get("willing_bonds", True):
-        selected_hardcoded.update(["INDIA_GOVT_10Y", "INDIA_CORP_AAA", "INFLATION_LINKED_BOND"])
-        # FDs
-        selected_hardcoded.update(["SBI_FD", "HDFC_FD", "POST_OFFICE_TD"])
+        selected_tickers.update([
+            "INDIA_GOVT_10Y", "INDIA_CORP_AAA", "INFLATION_LINKED_BOND",
+            "SBI_FD", "HDFC_FD", "POST_OFFICE_TD"
+        ])
 
     if preferences.get("open_reits", False):
-        selected_hardcoded.update(["EMBASSY_REIT", "MINDSPACE_REIT", "BROOKFIELD_REIT"])
-
-    live = {t: LIVE_ASSETS[t] for t in selected_live if t in LIVE_ASSETS}
-    hardcoded = {k: HARDCODED_ASSETS[k] for k in selected_hardcoded}
+        selected_tickers.update(["EMBASSY_REIT", "MINDSPACE_REIT", "BROOKFIELD_REIT"])
+        
+    live = {}
+    hardcoded = {}
+    
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT ticker, is_synthetic, annual_return, annual_volatility, equity_corr, asset_class, sector FROM assets WHERE ticker = ANY(%s)", (list(selected_tickers),))
+                rows = cur.fetchall()
+                for row in rows:
+                    ticker, is_syn, ret, vol, corr, asset_class, sector = row
+                    # Currency defaults to INR for live assets except specific ones, but for synthetic we just need the stats.
+                    # We will handle USD/INR in fetch_price_data checking the ticker name or we can just hardcode for USD assets.
+                    if is_syn:
+                        hardcoded[ticker] = {
+                            "label": ticker,
+                            "category": asset_class,
+                            "sector": sector,
+                            "annual_return": float(ret) if ret else 0.0,
+                            "annual_vol": float(vol) if vol else 0.0,
+                            "equity_corr": float(corr) if corr else 0.0
+                        }
+                    else:
+                        live[ticker] = {
+                            "label": ticker,
+                            "category": asset_class,
+                            "sector": sector,
+                            "currency": "USD" if ticker in ["SPY", "QQQ", "EEM", "IVE", "IVW", "USMV", "GLD", "BTC-USD", "ETH-USD", "SOL-USD"] else "INR"
+                        }
+    except Exception as e:
+        print(f"Error fetching asset universe from DB: {e}")
+        
     return {"live": live, "hardcoded": hardcoded}
 
+CACHE_TTL_HOURS = 24
 
-def fetch_price_data(tickers: list, period: str = "5y") -> pd.DataFrame:
-    """Download adjusted close prices from yfinance with caching."""
-    key = "prices_" + "_".join(sorted(tickers))
-    cached = _load_cache(key)
-    if cached is not None:
-        return cached
+def _get_stale_or_missing_tickers(tickers: list) -> list:
+    """Returns a list of tickers that either have no data or data older than 24 hours."""
+    needs_fetch = []
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                for ticker in tickers:
+                    cur.execute("SELECT MAX(fetched_at) FROM prices WHERE ticker = %s", (ticker,))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        last_fetched = row[0]
+                        if datetime.now() - last_fetched > timedelta(hours=CACHE_TTL_HOURS):
+                            needs_fetch.append(ticker)
+                    else:
+                        needs_fetch.append(ticker)
+    except Exception as e:
+        print(f"DB Error checking cache status: {e}")
+        return tickers  # Fetch all if DB fails
+    return needs_fetch
 
-    # Fetch USDINR if needed
-    has_usd = any(LIVE_ASSETS.get(t, {}).get("currency") == "USD" for t in tickers)
-    usdinr = pd.Series()
-    if has_usd:
-        try:
-            usdinr_data = yf.download("USDINR=X", period=period, auto_adjust=True, progress=False)["Close"]
-            if isinstance(usdinr_data, pd.DataFrame):
-                usdinr = usdinr_data.iloc[:, 0]
-            else:
-                usdinr = usdinr_data
-        except Exception:
-            pass
+def _save_prices_to_db(ticker: str, df: pd.Series, currency: str):
+    if df.empty:
+        return
+    data = []
+    for date, price in df.items():
+        if pd.isna(price): continue
+        data.append((ticker, date.date(), float(price), currency))
+        
+    query = """
+        INSERT INTO prices (ticker, price_date, close_price, currency, fetched_at)
+        VALUES %s
+        ON CONFLICT (ticker, price_date) DO UPDATE 
+        SET close_price = EXCLUDED.close_price, 
+            currency = EXCLUDED.currency, 
+            fetched_at = EXCLUDED.fetched_at
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(cur, query, data, template="(%s, %s, %s, %s, NOW())")
+            conn.commit()
+    except Exception as e:
+        print(f"DB Error saving {ticker}: {e}")
 
-    frames = {}
-    for ticker in tickers:
-        try:
-            data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
-            if data.empty:
-                continue
-            close = data["Close"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-            
-            # Convert to INR if asset is in USD
-            if LIVE_ASSETS.get(ticker, {}).get("currency") == "USD" and not usdinr.empty:
-                common_idx = close.index.intersection(usdinr.index)
-                close = close.loc[common_idx] * usdinr.loc[common_idx]
-
-            close.name = ticker
-            frames[ticker] = close
-        except Exception:
-            pass
-
-    if not frames:
+def _load_prices_from_db(tickers: list) -> pd.DataFrame:
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                query = "SELECT ticker, price_date, close_price FROM prices WHERE ticker = ANY(%s) ORDER BY price_date"
+                cur.execute(query, (tickers,))
+                rows = cur.fetchall()
+                if not rows:
+                    return pd.DataFrame()
+                
+                df = pd.DataFrame(rows, columns=['ticker', 'price_date', 'close_price'])
+                df['close_price'] = df['close_price'].astype(float)
+                df['price_date'] = pd.to_datetime(df['price_date'])
+                pivot_df = df.pivot(index='price_date', columns='ticker', values='close_price')
+                return pivot_df
+    except Exception as e:
+        print(f"DB Error loading prices: {e}")
         return pd.DataFrame()
 
-    prices = pd.DataFrame(frames).dropna(how="all")
-    prices = prices.ffill().dropna()
-    _save_cache(key, prices)
+
+def fetch_price_data(tickers: list, asset_universe: dict, period: str = "5y") -> pd.DataFrame:
+    """Download adjusted close prices from yfinance and cache to Postgres."""
+    if not tickers:
+        return pd.DataFrame()
+
+    needs_fetch = _get_stale_or_missing_tickers(tickers)
+
+    if needs_fetch:
+        # Fetch USDINR if needed
+        has_usd = any(asset_universe["live"].get(t, {}).get("currency") == "USD" for t in needs_fetch)
+        usdinr = pd.Series(dtype=float)
+        if has_usd:
+            try:
+                usdinr_data = yf.download("USDINR=X", period=period, auto_adjust=True, progress=False)["Close"]
+                if isinstance(usdinr_data, pd.DataFrame):
+                    usdinr = usdinr_data.iloc[:, 0]
+                else:
+                    usdinr = usdinr_data
+            except Exception:
+                pass
+
+        for ticker in needs_fetch:
+            try:
+                data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+                if data.empty:
+                    continue
+                close = data["Close"]
+                if isinstance(close, pd.DataFrame):
+                    close = close.iloc[:, 0]
+                
+                currency = asset_universe["live"].get(ticker, {}).get("currency", "INR")
+                
+                # Convert to INR if asset is in USD
+                if currency == "USD" and not usdinr.empty:
+                    common_idx = close.index.intersection(usdinr.index)
+                    close = close.loc[common_idx] * usdinr.loc[common_idx]
+                    currency = "INR" # after conversion it's stored as INR
+
+                close.name = ticker
+                _save_prices_to_db(ticker, close, currency)
+            except Exception as e:
+                print(f"Error processing {ticker}: {e}")
+
+    prices = _load_prices_from_db(tickers)
+    if not prices.empty:
+        prices = prices.ffill().dropna()
+        
     return prices
 
 
@@ -326,7 +240,7 @@ def build_combined_returns(asset_universe: dict, progress_cb=None) -> tuple:
     if progress_cb:
         progress_cb("Fetching historical prices from yfinance…", 0.2)
 
-    prices = fetch_price_data(live_tickers) if live_tickers else pd.DataFrame()
+    prices = fetch_price_data(live_tickers, asset_universe) if live_tickers else pd.DataFrame()
 
     live_returns = pd.DataFrame()
     if not prices.empty:
@@ -351,31 +265,25 @@ def build_combined_returns(asset_universe: dict, progress_cb=None) -> tuple:
     # Combine
     combined = pd.concat([live_returns, synth_returns], axis=1).dropna()
 
-    # Build metadata
+    # We will let portfolio_optimizer query metadata via JOIN.
+    # However, for compatibility, we just return a dataframe containing the tickers as index
+    # and their asset classes/sectors fetched from DB.
     meta_rows = []
-    for t, info in asset_universe["live"].items():
-        if t in combined.columns:
-            meta_rows.append({
-                "ticker": t,
-                "label": info["label"],
-                "category": info["category"],
-                "sector": info["sector"],
-                "asset_class": CATEGORY_CLASS.get(info["category"], "equity"),
-                "hardcoded": False,
-            })
-    for k, info in hardcoded.items():
-        if k in combined.columns:
-            meta_rows.append({
-                "ticker": k,
-                "label": info["label"],
-                "category": info["category"],
-                "sector": info["sector"],
-                "asset_class": CATEGORY_CLASS.get(info["category"], "debt"),
-                "hardcoded": True,
-            })
-
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT ticker, asset_class, sector FROM assets WHERE ticker = ANY(%s)", (list(combined.columns),))
+                rows = cur.fetchall()
+                for r in rows:
+                    meta_rows.append({"ticker": r[0], "asset_class": r[1], "sector": r[2], "category": r[1], "label": r[0]})
+    except Exception as e:
+        print(f"Error fetching meta from DB: {e}")
+        
     meta = pd.DataFrame(meta_rows).set_index("ticker")
-    meta = meta.loc[combined.columns]  # align order
+    # ensure alignment
+    available_tickers = [t for t in combined.columns if t in meta.index]
+    combined = combined[available_tickers]
+    meta = meta.loc[combined.columns]
 
     if progress_cb:
         progress_cb("Computing statistics…", 0.8)

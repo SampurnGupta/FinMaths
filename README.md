@@ -1,6 +1,6 @@
 # FinMaths: Portfolio Optimization
 
-A premium, glassmorphism-inspired financial dashboard built with Streamlit and powered by Groq AI. This tool performs advanced Modern Portfolio Theory (MPT) optimization using real-time market data, adjusted for multi-currency risk, taxes, and inflation.
+A premium, glassmorphism-inspired financial dashboard built with Streamlit and powered by a PostgreSQL data layer and Groq's high-speed AI. This tool performs advanced Modern Portfolio Theory (MPT) optimization using real-time market data, adjusted for multi-currency risk, taxes, and inflation.
 
 ## Key Features
 
@@ -17,8 +17,13 @@ A premium, glassmorphism-inspired financial dashboard built with Streamlit and p
 
 ### 3. AI Portfolio Concierge (Groq)
 - **Interactive Chat**: Ask follow-up questions about your specific portfolio results in a natural chat interface.
-- **Context-Aware Insights**: AI Advisor is grounded in your generated metrics, risk profile, and asset allocations.
+- **Context-Aware Insights**: AI Advisor is powered by Groq's `openai/gpt-oss-120b` and is grounded in your generated metrics, risk profile, and asset allocations.
 - **Automated Briefing**: Get an immediate expert summary of your diversification benefits upon opening the chat.
+
+### 4. Robust PostgreSQL Data Layer
+- **Persistent Asset Metadata**: Hardcoded assumptions have been migrated into a flexible PostgreSQL `assets` table.
+- **High-Performance Caching**: Real-time Yahoo Finance data is cached into a `prices` table using a 24-hour Time-To-Live (TTL) architecture via fast bulk upserts (`execute_values`), significantly optimizing dashboard load speeds.
+- **Auditable Portfolio History**: Every finalized Monte Carlo optimization strategy is securely logged in JSON format into a `portfolio_runs` table, empowering the "Recent Runs" Streamlit sidebar UI and long-term portfolio tracking.
 
 ## Installation
 
@@ -44,6 +49,11 @@ A premium, glassmorphism-inspired financial dashboard built with Streamlit and p
 4.  **Run the App**:
     ```bash
     streamlit run app.py
+    ```
+
+5. **Run the schema.sql Script**
+    ```bash
+    psql -U postgres -d finmaths -f "d:\#PROPER_PROJECTS\FinMaths\schema.sql"
     ```
 
 ## Methodology

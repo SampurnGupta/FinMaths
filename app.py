@@ -28,6 +28,8 @@ from modules.visualizations import (plot_efficient_frontier, plot_correlation_he
 from modules.llm_engine import (get_llm_explanation, explain_chart, explain_tax_logic, 
                                  explain_monte_carlo, get_portfolio_summary, get_final_recommendation,
                                  get_chat_response)
+from modules.db import get_db_connection
+import json
 
 # st.set_page_config(page_title="Portfolio Optimizer", page_icon="📈", layout="wide")
 st.set_page_config(page_title="Portfolio Optimizer", layout="wide")
@@ -214,6 +216,22 @@ def init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 
+def log_portfolio_run(profile_name, opt_series):
+    try:
+        exclude = ["return", "volatility", "sharpe", "strategy", "order"]
+        weights = {k: float(v) for k, v in opt_series.items() if k not in exclude}
+        
+        query = """
+            INSERT INTO portfolio_runs (risk_profile, weights, expected_return, sharpe_ratio)
+            VALUES (%s, %s, %s, %s)
+        """
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (profile_name, json.dumps(weights), float(opt_series["return"]), float(opt_series["sharpe"])))
+            conn.commit()
+    except Exception as e:
+        print(f"Error logging portfolio run: {e}")
+
 def sidebar():
     with st.sidebar:
         # st.markdown("## 📈 Portfolio Optimizer")
@@ -237,6 +255,31 @@ def sidebar():
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
+            
+        st.markdown("---")
+        st.markdown("### 🕒 Recent Runs")
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT risk_profile, expected_return, sharpe_ratio FROM portfolio_runs ORDER BY created_at DESC LIMIT 10")
+                    runs = cur.fetchall()
+                    if runs:
+                        df = pd.DataFrame(runs, columns=["Profile", "Return", "Sharpe"])
+                        df["Return"] = df["Return"].astype(float).map("{:.2%}".format)
+                        df["Sharpe"] = df["Sharpe"].astype(float).round(2)
+                        st.dataframe(df, hide_index=True, use_container_width=True)
+                        
+                        # Show average sharpe per profile
+                        cur.execute("SELECT risk_profile, AVG(sharpe_ratio) as avg_sharpe FROM portfolio_runs GROUP BY risk_profile")
+                        avg_runs = cur.fetchall()
+                        if avg_runs:
+                            st.markdown("**Average Sharpe by Profile**")
+                            for r_prof, r_avg in avg_runs:
+                                st.caption(f"{r_prof}: {float(r_avg):.2f}")
+                    else:
+                        st.caption("No recent runs found.")
+        except Exception as e:
+            st.caption("Unable to load recent runs.")
 
 def card(title, value, subtitle="Post-Tax & Inflation Adjusted", color="#6366F1"):
     st.markdown(f'''
@@ -399,6 +442,8 @@ def screen_optimization():
                     st.session_state.optimal = st.session_state.gmvp
                 else:
                     st.session_state.optimal = row
+                    
+                log_portfolio_run(st.session_state.profile["name"], st.session_state.optimal)
                 st.session_state.screen = 3
                 st.rerun()
 
@@ -449,9 +494,10 @@ def screen_allocation():
             if weights[t] < 0.001: continue
             amt = user["initial"] * weights[t]
             ret = st.session_state.mean_returns[t] * 12
-            cat = meta.loc[t, "category"]
+            cat = meta.loc[t, "category"] if "category" in meta.columns else meta.loc[t, "asset_class"]
             post_tax = estimate_post_tax_return(ret, cat)
-            rows.append({"Asset": meta.loc[t, "label"], "Allocation": f"{weights[t]:.1%}",
+            lbl = meta.loc[t, "label"] if "label" in meta.columns else t
+            rows.append({"Asset": lbl, "Allocation": f"{weights[t]:.1%}",
                          "Amount (₹)": f"₹{amt:,.0f}", "Exp. Return": f"{ret:.2%}",
                          "Post-Tax & Inf.": f"{post_tax:.2%}"})
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)

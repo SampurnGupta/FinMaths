@@ -25,7 +25,7 @@ def get_llm_explanation(prompt: str, api_key: str, system_prompt: str = "You are
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
-            model="llama-3.3-70b-versatile", 
+            model="openai/gpt-oss-120b", 
             temperature=0.3,
             max_tokens=500,
         )
@@ -101,7 +101,7 @@ def get_chat_response(messages: list, context: str, api_key: str):
         full_messages = [{"role": "system", "content": system_prompt}] + messages
         chat_completion = client.chat.completions.create(
             messages=full_messages,
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             temperature=0.4,
             max_tokens=800,
         )

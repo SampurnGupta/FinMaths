@@ -6,6 +6,7 @@ Efficient Frontier + Monte Carlo portfolio optimization using scipy.
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from modules.db import get_db_connection
 
 RISK_FREE_RATE_ANNUAL = 0.065  # RBI repo-rate approximation
 INFLATION_RATE = 0.060         # Indian CPI average approximation
@@ -52,19 +53,42 @@ def get_return_explanation():
     """
 
 
-def build_constraints(risk_profile: dict, meta: pd.DataFrame):
+def build_constraints(risk_profile: dict, meta_fallback: pd.DataFrame):
     """
     Construct scipy constraints and bounds for optimization.
-    - Asset class bounds (equity/debt/alt)
-    - Per-asset max 15%
-    - Per-sector max 25%
+    Pulls sector/asset_class via a JOIN against the prices table from Postgres.
     """
-    n = len(meta)
-    tickers = list(meta.index)
+    tickers = list(meta_fallback.index)
+    n = len(tickers)
 
-    equity_idx = [i for i, t in enumerate(tickers) if meta.loc[t, "asset_class"] == "equity"]
-    debt_idx   = [i for i, t in enumerate(tickers) if meta.loc[t, "asset_class"] == "debt"]
-    alt_idx    = [i for i, t in enumerate(tickers) if meta.loc[t, "asset_class"] == "alt"]
+    query = """
+        SELECT DISTINCT p.ticker, a.asset_class, a.sector
+        FROM prices p
+        JOIN assets a ON p.ticker = a.ticker
+        WHERE p.ticker = ANY(%s)
+    """
+    
+    meta_dict = {}
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (tickers,))
+                for row in cur.fetchall():
+                    meta_dict[row[0]] = {"asset_class": row[1], "sector": row[2]}
+    except Exception as e:
+        print(f"Error executing JOIN in build_constraints: {e}")
+
+    # Fallback to provided dataframe if DB fetch fails or tickers haven't been inserted into prices yet
+    for t in tickers:
+        if t not in meta_dict:
+            meta_dict[t] = {
+                "asset_class": meta_fallback.loc[t, "asset_class"] if t in meta_fallback.index else "equity",
+                "sector": meta_fallback.loc[t, "sector"] if t in meta_fallback.index else "Unknown"
+            }
+
+    equity_idx = [i for i, t in enumerate(tickers) if meta_dict[t]["asset_class"] == "equity"]
+    debt_idx   = [i for i, t in enumerate(tickers) if meta_dict[t]["asset_class"] == "debt"]
+    alt_idx    = [i for i, t in enumerate(tickers) if meta_dict[t]["asset_class"] == "alt"]
 
     e_lb, e_ub = risk_profile["equity_bounds"]
     d_lb, d_ub = risk_profile["debt_bounds"]
@@ -91,9 +115,9 @@ def build_constraints(risk_profile: dict, meta: pd.DataFrame):
         ]
 
     # Sector constraints: max 25% per sector
-    sectors = meta["sector"].unique()
+    sectors = {info["sector"] for info in meta_dict.values()}
     for sector in sectors:
-        s_idx = [i for i, t in enumerate(tickers) if meta.loc[t, "sector"] == sector]
+        s_idx = [i for i, t in enumerate(tickers) if meta_dict[t]["sector"] == sector]
         if len(s_idx) > 1:
             constraints.append(
                 {"type": "ineq", "fun": lambda w, idx=s_idx: 0.25 - sum(w[i] for i in idx)}

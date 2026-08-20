@@ -184,7 +184,7 @@ def plot_correlation_heatmap(corr_matrix: pd.DataFrame, meta: pd.DataFrame) -> g
 # ── 3. Allocation Pie Chart ───────────────────────────────────────────────────
 def plot_allocation_pie(weights: pd.Series, meta: pd.DataFrame) -> go.Figure:
     w = weights[weights > 0.001].sort_values(ascending=False)
-    labels = [meta.loc[t, "label"] if t in meta.index else t for t in w.index]
+    labels = [meta.loc[t, "label"] if (t in meta.index and "label" in meta.columns) else t for t in w.index]
     colors = ["#6366F1", "#10B981", "#F59E0B", "#F43F5E", "#06B6D4", "#8B5CF6"]
 
     fig = go.Figure(go.Pie(
