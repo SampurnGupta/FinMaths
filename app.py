@@ -267,7 +267,7 @@ def sidebar():
                         df = pd.DataFrame(runs, columns=["Profile", "Return", "Sharpe"])
                         df["Return"] = df["Return"].astype(float).map("{:.2%}".format)
                         df["Sharpe"] = df["Sharpe"].astype(float).round(2)
-                        st.dataframe(df, hide_index=True, use_container_width=True)
+                        st.dataframe(df, hide_index=True, width="stretch")
                         
                         # Show average sharpe per profile
                         cur.execute("SELECT risk_profile, AVG(sharpe_ratio) as avg_sharpe FROM portfolio_runs GROUP BY risk_profile")
